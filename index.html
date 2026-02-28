@@ -202,11 +202,12 @@
     const outlineGroup = new THREE.Group();
     scene.add(outlineGroup);
 
-    const R_FILL = 1.028;
-    const R_LINE = 1.0282; // just a hair above fill to avoid z-fighting
-    const R_GLOW = 1.030;
+    // All layers sit right on the surface — fill projected onto sphere, outline just above
+    const R_FILL = 1.001;
+    const R_LINE = 1.002;
+    const R_GLOW = 1.003;
 
-    // Gradient fill: green at bottom → cyan at top, radial fade toward edges
+    // Painted-on fill: more opaque, slightly glowing, hugs the surface
     const fillMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -225,7 +226,7 @@
           vec3 colTop = vec3(0.05, 0.72, 1.0);   // #0DB8FF cyan
           vec3 color  = mix(colBot, colTop, vUv.y);
           float edge  = distance(vUv, vec2(0.5)) * 2.0; // 0=centre 1=edge
-          float alpha = mix(0.32, 0.10, clamp(edge, 0.0, 1.0));
+          float alpha = mix(0.55, 0.20, clamp(edge, 0.0, 1.0));
           gl_FragColor = vec4(color, alpha);
         }
       `,
@@ -392,51 +393,22 @@
       const quat = tangentQuaternion(placeLat, placeLon);
       const pos  = ll2v(placeLat, placeLon, r);
 
-      const fill = new THREE.Mesh(geo, mat);
-      fill.quaternion.copy(quat);
-      fill.position.copy(pos);
-      outlineGroup.add(fill);
-
-
-      renderer.shadowMap.enabled = true;
-      sun.castShadow = true;
-
-      sun.shadow.mapSize.set(2048, 2048);
-      sun.shadow.camera.near = 0.1;
-      sun.shadow.camera.far = 200;
-      sun.shadow.camera.left = -5;
-      sun.shadow.camera.right = 5;
-      sun.shadow.camera.top = 5;
-      sun.shadow.camera.bottom = -5;
-
-      moon.receiveShadow = true;
-      fill.castShadow = true;
-      fill.material.transparent = true;
-      fill.material.opacity = 0.3;
-      fill.material.depthWrite = true;
-      fill.material.alphaTest = 0.01;
-
-      // Shadow decal: project each fill vertex radially onto the moon surface.
-      // The flat polygon is at R_FILL = 1.028; projecting down to R = 1.003 gives
-      // a dark patch that conforms to the sphere and is visible from any angle,
-      // unlike a shadow map which can't resolve a 2.8% height difference reliably.
-      const shadowGeo = geo.clone();
-      const attr = shadowGeo.attributes.position;
-      for (let i = 0; i < attr.count; i++) {
-        const p = new THREE.Vector3(attr.getX(i), attr.getY(i), 0)
+      // Project every fill vertex radially onto the sphere so the fill
+      // conforms to the lunar surface instead of floating on a flat plane.
+      const posAttr = geo.attributes.position;
+      for (let i = 0; i < posAttr.count; i++) {
+        const p = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), 0)
           .applyQuaternion(quat)
           .add(pos)
           .normalize()
-          .multiplyScalar(1.003);
-        attr.setXYZ(i, p.x, p.y, p.z);
+          .multiplyScalar(r);
+        posAttr.setXYZ(i, p.x, p.y, p.z);
       }
-      attr.needsUpdate = true;
-      // outlineGroup.add(new THREE.Mesh(shadowGeo, new THREE.MeshBasicMaterial({
-      //   color: 0x000000,
-      //   transparent: true,
-      //   opacity: 0.45,
-      //   depthWrite: false,
-      // })));
+      posAttr.needsUpdate = true;
+
+      // Vertices are in world space — no mesh transform needed.
+      const fill = new THREE.Mesh(geo, mat);
+      outlineGroup.add(fill);
     }
 
     // ── Camera fly-to ──────────────────────────────────────────────────────────
