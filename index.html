@@ -182,7 +182,7 @@
     // Moon albedo is ~0.07–0.12 so even intensity 1.0 clips highlights.
     // Keep ambient near zero to preserve the dark-side terminator.
     // scene.add(new THREE.AmbientLight(0xFFFFFF, 0.1));
-    const sun = new THREE.DirectionalLight(0xFFFFFF, 1);
+    const sun = new THREE.DirectionalLight(0xFFFFFF, 1.4);
     sun.position.set(100, 5, 30);
     scene.add(sun);
 
