@@ -1,0 +1,8 @@
+# Source / raw assets (too large or unused — keep web-ready versions)
+*.tif
+color.jpg
+displacement.png
+lroc_color_poles.jpg
+
+# macOS
+.DS_Store
