@@ -305,30 +305,34 @@
     }
 
     // Convert a raw GeoJSON ring to flat [u, v] pairs (in radians, centred on origin).
-    // For |centLat| > 70° uses polar stereographic so circumpolar countries like
-    // Antarctica render as a compact circle instead of a horribly stretched oval.
-    // Otherwise uses equirectangular with per-vertex cosLat (good for mid/low lats).
+    // Uses azimuthal equidistant projection centred on (centLon, centLat).
+    // This preserves shape correctly for countries of any size — small countries
+    // look identical to equirectangular, large ones (Russia, Canada) get correct
+    // proportions instead of being horizontally stretched.
     function ringToFlat(ring, centLon, centLat) {
-      if (Math.abs(centLat) > 70) {
-        const sign = centLat > 0 ? 1 : -1;
-        const phi0 = centLat * Math.PI / 180;
-        // rho of the centroid in the stereographic plane; used to shift origin to centroid
-        const rho0 = 2 * Math.tan((Math.PI / 2 - sign * phi0) / 2);
-        return ring.map(([lon, lat]) => {
-          const phi = lat  * Math.PI / 180;
-          const lam = (lon - centLon) * Math.PI / 180;
-          const rho = 2 * Math.tan((Math.PI / 2 - sign * phi) / 2);
-          return [
-            rho * Math.sin(lam),
-            sign * (rho0 - rho * Math.cos(lam)), // +V northward; centroid → (0, 0)
-          ];
-        });
-      }
-      // Equirectangular with per-vertex cosLat — output already in radians
-      return unwrapRing(ring, centLon).map(([lon, lat]) => [
-        (lon - centLon) * Math.cos(lat * Math.PI / 180) * Math.PI / 180,
-        (lat - centLat) * Math.PI / 180,
-      ]);
+      const φ1 = centLat * Math.PI / 180;
+      const sinφ1 = Math.sin(φ1), cosφ1 = Math.cos(φ1);
+
+      return unwrapRing(ring, centLon).map(([lon, lat]) => {
+        const φ2 = lat * Math.PI / 180;
+        const dλ = (lon - centLon) * Math.PI / 180;
+        const sinφ2 = Math.sin(φ2), cosφ2 = Math.cos(φ2);
+
+        // Angular distance from centroid
+        const cosC = sinφ1 * sinφ2 + cosφ1 * cosφ2 * Math.cos(dλ);
+        const c = Math.acos(Math.max(-1, Math.min(1, cosC)));
+
+        if (c < 1e-10) return [0, 0];
+
+        // Scale factor: c / sin(c) — approaches 1 for small c
+        const k = c / Math.sin(c);
+
+        // Azimuthal equidistant: +x = east, +y = north
+        return [
+          k * cosφ2 * Math.sin(dλ),
+          k * (cosφ1 * sinφ2 - sinφ1 * cosφ2 * Math.cos(dλ)),
+        ];
+      });
     }
 
     // Convert a raw GeoJSON ring to flat 2D UV points (for ShapeGeometry).
@@ -436,11 +440,24 @@
     }
 
     // ── Camera fly-to ──────────────────────────────────────────────────────────
-    let flyTarget = null; // unit direction vector to slerp toward
+    let flyTarget   = null;  // unit direction vector to slerp toward
+    let flyDistance = null;  // target camera distance to lerp toward
 
-    function flyTo(lat, lon) {
+    function flyTo(lat, lon, maxFlatRadius) {
       flyTarget = ll2v(lat, lon, 1).normalize();
       controls.autoRotate = false;
+
+      if (maxFlatRadius !== undefined) {
+        // Scale Earth-surface radians to angular extent on the moon.
+        // Cap at π/2: beyond that the polygon wraps behind the limb and is occluded anyway,
+        // and cos(alpha) going negative breaks the formula when alpha > π/2.
+        const alpha   = Math.min(Math.PI / 2, maxFlatRadius * EARTH_MOON_SCALE);
+        const halfFov = (45 / 2) * Math.PI / 180;
+        // Distance so the farthest visible vertex fits inside the FOV with 30% padding.
+        // Also enforce a minimum of 2.0 so tiny islands still show moon context.
+        const needed  = Math.sin(alpha) / Math.tan(halfFov) * 1.3 + Math.cos(alpha);
+        flyDistance   = Math.min(Math.max(needed, 2.0), controls.maxDistance);
+      }
     }
 
     // Convert sun position to the lat/lon on the moon directly facing the sun
@@ -453,18 +470,71 @@
       return { lat, lon };
     }
 
+    // Compute area-weighted centroid across all outer rings of a country.
+    // Uses the shoelace formula to get each polygon's area, then weights its
+    // vertex-average centroid by that area. This prevents small polygons with
+    // many vertices (Aleutian Islands, Hawaii) from pulling the centroid away
+    // from the dominant landmass (e.g. contiguous USA or mainland Russia).
+    // All longitudes are unwrapped from a common reference before averaging.
+    function countryCentroid(feature) {
+      const { type, coordinates } = feature.geometry;
+      const outerRings = type === 'Polygon'
+        ? [coordinates[0]]
+        : coordinates.map(poly => poly[0]);
+
+      if (!outerRings.length || !outerRings[0].length) return [0, 0];
+
+      const refLon = outerRings[0][0][0];
+      let totalW = 0, sumLon = 0, sumLat = 0;
+
+      for (const ring of outerRings) {
+        const pts = unwrapRing(ring, refLon);
+        const n   = pts.length;
+
+        // Shoelace area (lon/lat units — only used for relative weighting)
+        let area = 0;
+        for (let i = 0; i < n; i++) {
+          const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % n];
+          area += x0 * y1 - x1 * y0;
+        }
+        const w = Math.abs(area) / 2;
+        if (w < 1e-10) continue;
+
+        const cLon = pts.reduce((s, p) => s + p[0], 0) / n;
+        const cLat = pts.reduce((s, p) => s + p[1], 0) / n;
+        totalW += w; sumLon += cLon * w; sumLat += cLat * w;
+      }
+
+      if (totalW < 1e-10) {
+        // Fallback: plain vertex average of first ring
+        const pts = unwrapRing(outerRings[0], refLon);
+        return [pts.reduce((s,p)=>s+p[0],0)/pts.length, pts.reduce((s,p)=>s+p[1],0)/pts.length];
+      }
+      return [sumLon / totalW, sumLat / totalW];
+    }
+
     function drawCountry(feature) {
       clearOutlines();
       const { type, coordinates } = feature.geometry;
 
-      // Country's own centroid — used for scaling/UV so the shape is correct
-      const ringCentLon = feature.properties.LABEL_X ?? 0;
-      const ringCentLat = feature.properties.LABEL_Y ?? 0;
+      // Vertex-averaged centroid — keeps the polygon visually centred on the moon
+      // regardless of where LABEL_X/LABEL_Y is placed (often off-centre for large countries).
+      const [ringCentLon, ringCentLat] = countryCentroid(feature);
 
       // Where to place the polygon on the moon — the subsolar point
       const { lat: placeLat, lon: placeLon } = sunSubsolarPoint();
 
-      flyTo(placeLat, placeLon);
+      // Measure max angular extent across all rings for auto-zoom
+      let maxFlatR = 0;
+      const measurePoly = rings => {
+        for (const ring of rings)
+          for (const [u, v] of ringToFlat(ring, ringCentLon, ringCentLat))
+            maxFlatR = Math.max(maxFlatR, Math.sqrt(u * u + v * v));
+      };
+      if (type === 'Polygon')      measurePoly(coordinates);
+      if (type === 'MultiPolygon') coordinates.forEach(measurePoly);
+
+      flyTo(placeLat, placeLon, maxFlatR);
 
       const processPolygon = poly => {
         addFillMesh(poly, ringCentLon, ringCentLat, placeLon, placeLat, R_FILL, fillMat);
@@ -535,13 +605,22 @@
     (function animate() {
       requestAnimationFrame(animate);
 
-      // Smooth camera fly-to: slerp current direction toward target
-      if (flyTarget) {
-        const dist = camera.position.length();
-        const dir  = camera.position.clone().normalize();
-        dir.lerp(flyTarget, 0.04).normalize();
+      // Smooth camera fly-to: slerp direction + lerp distance simultaneously
+      if (flyTarget || flyDistance !== null) {
+        let dist = camera.position.length();
+        const dir = camera.position.clone().normalize();
+
+        if (flyTarget) {
+          dir.lerp(flyTarget, 0.04).normalize();
+          if (dir.distanceTo(flyTarget) < 0.005) flyTarget = null;
+        }
+
+        if (flyDistance !== null) {
+          dist += (flyDistance - dist) * 0.06;
+          if (Math.abs(dist - flyDistance) < 0.01) { dist = flyDistance; flyDistance = null; }
+        }
+
         camera.position.copy(dir.multiplyScalar(dist));
-        if (dir.distanceTo(flyTarget) < 0.005) flyTarget = null;
       }
 
       controls.update();
