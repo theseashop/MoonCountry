@@ -286,6 +286,26 @@
     }
 
 
+    // Build the geographic tangent basis at (placeLat, placeLon) — from main branch.
+    function tangentQuaternion(placeLat, placeLon) {
+      const phi   = (90 - placeLat) * Math.PI / 180;
+      const theta = (placeLon + 180) * Math.PI / 180;
+      const east  = new THREE.Vector3(Math.sin(theta), 0, Math.cos(theta));
+      const north = new THREE.Vector3(
+         Math.cos(phi) * Math.cos(theta),
+         Math.sin(phi),
+        -Math.cos(phi) * Math.sin(theta)
+      );
+      const norm  = new THREE.Vector3(
+        -Math.sin(phi) * Math.cos(theta),
+         Math.cos(phi),
+         Math.sin(phi) * Math.sin(theta)
+      );
+      return new THREE.Quaternion().setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(east, north, norm)
+      );
+    }
+
     // Convert a raw GeoJSON ring to flat [u, v] pairs (in radians, centred on origin).
     // Uses azimuthal equidistant projection centred on (centLon, centLat).
     // This preserves shape correctly for countries of any size — small countries
@@ -413,112 +433,43 @@
     function addFillMesh(rings, centLon, centLat, placeLon, placeLat, r, mat) {
       const open = rings.map(openRing);
 
-      // Step 1: Build 3D positions for all rings (Moon scale, spherical)
-      const outer3D = ringTo3D(open[0], centLon, centLat, placeLon, placeLat, r);
-      const holes3D = open.slice(1).map(ring =>
-        ringTo3D(ring, centLon, centLat, placeLon, placeLat, r));
+      // Step 1: Build THREE.Shape with holes — same as main branch.
+      // THREE.ShapeGeometry uses earcut internally and handles holes correctly,
+      // which is why the main branch fill works cleanly for all countries.
+      const uvs   = open.map(ring => ringToUV(ring, centLon, centLat, r));
+      const shape = new THREE.Shape(uvs[0]);
+      uvs.slice(1).forEach(uv => shape.holes.push(new THREE.Path(uv)));
+      const geo = new THREE.ShapeGeometry(shape);
 
-      // Step 2: Triangulate using azimuthal equidistant at EARTH scale.
-      // At Earth scale, every country fits within ~90° of its centroid, so the
-      // 2D projection is always topology-preserving (no self-intersections).
-      // The tangent-plane approach (posToUV) failed for large countries like
-      // the US because at Moon scale they span >180°, wrapping behind the plane.
-      const outerT = ringToFlat(open[0], centLon, centLat)
-        .map(([u, v]) => new THREE.Vector2(u, v));
-      const holesT = open.slice(1).map(ring =>
-        ringToFlat(ring, centLon, centLat).map(([u, v]) => new THREE.Vector2(u, v)));
-
-      // Step 3: Triangulate — indices reference [outer, ...holes]
-      const faces = THREE.ShapeUtils.triangulateShape(outerT, holesT);
-
-      // Combined 3D vertex array matching triangulateShape index order
-      const verts = [...outer3D.map(v => v.clone())];
-      for (const ring of holes3D)
-        for (const v of ring) verts.push(v.clone());
-
-      // Gradient stored in uv.y = world-space Y, normalized to [0,1] after subdivision.
-      // World-space Y is perfectly continuous across all triangle edges.
-      const uvs2 = verts.map(v => new THREE.Vector2(0, v.y));
-
-      let tris = faces.map(f => [...f]);
-
-      // Step 4: Subdivide triangles so they hug the sphere.
-      // Uses longest-edge bisection (split into 2) instead of 4-way midpoint
-      // subdivision. On a sphere, 4-way splits create a central sub-triangle
-      // whose great-circle edges don't perfectly tile the original spherical
-      // triangle, producing micro-gaps visible as bright seam lines. Bisection
-      // only creates edges from a midpoint to an existing vertex, avoiding this.
-      const MAX_EDGE = 0.18;
-      const MAX_TRIS = 300000;
-
-      const midCache = new Map();
-      function midIdx(a, b) {
-        const key = Math.min(a,b) + ',' + Math.max(a,b);
-        if (midCache.has(key)) return midCache.get(key);
-        const pm = verts[a].clone().add(verts[b]).normalize().multiplyScalar(r);
-        const idx = verts.length;
-        verts.push(pm); uvs2.push(new THREE.Vector2(0, pm.y));
-        midCache.set(key, idx);
-        return idx;
+      // Step 2: Project every vertex radially onto the sphere surface.
+      // The ShapeGeometry vertices are in the flat tangent plane at (placeLon, placeLat).
+      // Rotating to world space and then normalizing+scaling snaps each vertex to the
+      // sphere — no subdivision needed, so thin earcut triangles stay invisible.
+      const quat = tangentQuaternion(placeLat, placeLon);
+      const orig = ll2v(placeLat, placeLon, r);
+      const pos  = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const p = new THREE.Vector3(pos.getX(i), pos.getY(i), 0)
+          .applyQuaternion(quat).add(orig).normalize().multiplyScalar(r);
+        pos.setXYZ(i, p.x, p.y, p.z);
       }
+      pos.needsUpdate = true;
 
-      for (let pass = 0; pass < 12; pass++) {
-        if (tris.length >= MAX_TRIS) break;
-        const next = []; let any = false;
-        for (const [a, b, c] of tris) {
-          const ab = verts[a].distanceTo(verts[b]);
-          const bc = verts[b].distanceTo(verts[c]);
-          const ca = verts[c].distanceTo(verts[a]);
-          const mx = Math.max(ab, bc, ca);
-          if (mx > MAX_EDGE) {
-            any = true;
-            // Split only the longest edge → 2 sub-triangles
-            if (ab >= bc && ab >= ca) {
-              const m = midIdx(a, b);
-              next.push([a, m, c], [m, b, c]);
-            } else if (bc >= ca) {
-              const m = midIdx(b, c);
-              next.push([b, m, a], [m, c, a]);
-            } else {
-              const m = midIdx(c, a);
-              next.push([c, m, b], [m, a, b]);
-            }
-          } else {
-            next.push([a, b, c]);
-          }
-        }
-        tris = next;
-        if (!any) break;
+      // Step 3: Remap UV to [0,1] for the gradient shader.
+      const uv = geo.attributes.uv;
+      let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+      for (let i = 0; i < uv.count; i++) {
+        minU = Math.min(minU, uv.getX(i)); maxU = Math.max(maxU, uv.getX(i));
+        minV = Math.min(minV, uv.getY(i)); maxV = Math.max(maxV, uv.getY(i));
       }
+      const rU = maxU - minU || 1, rV = maxV - minV || 1;
+      for (let i = 0; i < uv.count; i++)
+        uv.setXY(i, (uv.getX(i) - minU) / rU, (uv.getY(i) - minV) / rV);
+      uv.needsUpdate = true;
 
-      // Normalize world-Y UVs to [0,1] for the gradient shader.
-      let minY = Infinity, maxY = -Infinity;
-      for (const uv of uvs2) {
-        minY = Math.min(minY, uv.y); maxY = Math.max(maxY, uv.y);
-      }
-      const rY = maxY - minY || 1;
-      for (const uv of uvs2) { uv.y = (uv.y - minY) / rY; }
-
-      // Step 5: Build final BufferGeometry
-      const nv = verts.length;
-      const posArr = new Float32Array(nv * 3);
-      const uvArr  = new Float32Array(nv * 2);
-      for (let i = 0; i < nv; i++) {
-        posArr[i*3]   = verts[i].x; posArr[i*3+1] = verts[i].y; posArr[i*3+2] = verts[i].z;
-        uvArr [i*2]   = uvs2[i].x;  uvArr [i*2+1] = uvs2[i].y;
-      }
-      const idxArr = new Uint32Array(tris.length * 3);
-      for (let i = 0; i < tris.length; i++) {
-        idxArr[i*3] = tris[i][0]; idxArr[i*3+1] = tris[i][1]; idxArr[i*3+2] = tris[i][2];
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-      geo.setAttribute('uv',       new THREE.BufferAttribute(uvArr,  2));
-      geo.setIndex(new THREE.BufferAttribute(idxArr, 1));
       geo.computeBoundingSphere();
-
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.renderOrder = -1;  // render fill before outline/glow so they pass depth test
+      mesh.renderOrder = -1;
       outlineGroup.add(mesh);
     }
 
@@ -670,6 +621,7 @@
                                      placeLon, placeLat, 1)[0];
         const { lat: polyPlaceLat, lon: polyPlaceLon } = v2ll(centMoonPt);
 
+        addFillMesh(poly, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat, R_FILL, fillMat);
         poly.forEach(ring => {
           addRing(ring, R_LINE, lineMat, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
         });
