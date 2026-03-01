@@ -226,10 +226,8 @@
       fragmentShader: `
         varying float vT;
         void main() {
-          vec3 colBot = vec3(0.0,  1.0,  0.53);  // #00FF88 green
-          vec3 colTop = vec3(0.05, 0.72, 1.0);   // #0DB8FF cyan
-          vec3 color  = mix(colBot, colTop, vT);
-          float alpha = 0.35;
+          vec3 color  = vec3(0.65, 0.72, 0.85);  // blue-gray
+          float alpha = 0.04;
           gl_FragColor = vec4(color, alpha);
         }
       `,
@@ -672,7 +670,6 @@
                                      placeLon, placeLat, 1)[0];
         const { lat: polyPlaceLat, lon: polyPlaceLon } = v2ll(centMoonPt);
 
-        addFillMesh(poly, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat, R_FILL, fillMat);
         poly.forEach(ring => {
           addRing(ring, R_LINE, lineMat, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
         });
