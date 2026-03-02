@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Moon Country</title>
+  <title>Countries</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #00000a; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; color: #fff; }
@@ -102,10 +102,10 @@
 </head>
 <body>
   <div id="ui">
-    <h1>Moon Country</h1>
+    <h1>Countries</h1>
     <div id="modeToggle">
-      <button id="btn2d">2D</button>
-      <button id="btn3d" class="active">3D Map</button>
+      <button id="btn2d">Flat</button>
+      <button id="btn3d" class="active">Curved</button>
     </div>
     <select id="countrySelect" disabled>
       <option value="">Loading…</option>
@@ -379,7 +379,6 @@
 
     const R_FILL_2D = 1.028;
     const R_LINE_2D = 1.0282;
-    const R_GLOW_2D = 1.030;
 
     const fillMat2d = new THREE.ShaderMaterial({
       transparent: true,
@@ -406,16 +405,10 @@
     });
 
     const lineMat2d = new LineMaterial({
-      color: 0x00ff88, linewidth: 2,
+      color: 0xF5DEB3, linewidth: 2,
       transparent: true, opacity: 0.90,
       resolution: new THREE.Vector2(innerWidth, innerHeight),
     });
-    const glowMat2d = new LineMaterial({
-      color: 0x66ffbb, linewidth: 5,
-      transparent: true, opacity: 0.14,
-      resolution: new THREE.Vector2(innerWidth, innerHeight),
-    });
-
     function tangentQuaternion(placeLat, placeLon) {
       const phi   = (90 - placeLat) * Math.PI / 180;
       const theta = (placeLon + 180) * Math.PI / 180;
@@ -504,7 +497,6 @@
         addFillMesh2d(poly, centLon, centLat, placeLon, placeLat, R_FILL_2D, fillMat2d);
         poly.forEach(ring => {
           addRing2d(ring, R_LINE_2D, lineMat2d, centLon, centLat, placeLon, placeLat);
-          addRing2d(ring, R_GLOW_2D, glowMat2d, centLon, centLat, placeLon, placeLat);
         });
       };
       if (type === 'Polygon')      processPolygon(coordinates);
@@ -686,7 +678,7 @@
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-      [lineMat2d, glowMat2d, lineMat3d, glowMat3d].forEach(m =>
+      [lineMat2d, lineMat3d, glowMat3d].forEach(m =>
         m.resolution.set(innerWidth, innerHeight));
     });
 
