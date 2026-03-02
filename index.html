@@ -104,8 +104,8 @@
   <div id="ui">
     <h1>Countries</h1>
     <div id="modeToggle">
-      <button id="btn2d">Flat</button>
       <button id="btn3d" class="active">Curved</button>
+      <button id="btn2d">Flat</button>
     </div>
     <select id="countrySelect" disabled>
       <option value="">Loading…</option>
@@ -507,8 +507,8 @@
     // Spherical rotation projection: every vertex lies exactly on the moon surface.
     // Uses frame-to-frame quaternion to preserve north orientation.
 
-    const R_LINE_3D = 1.015;
-    const R_GLOW_3D = 1.017;
+    const R_LINE_3D = 1.011;
+    const R_GLOW_3D = 1.013;
 
     const lineMat3d = new LineMaterial({
       color: 0xFF6622, linewidth: 2,
