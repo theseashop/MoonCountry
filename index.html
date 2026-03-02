@@ -24,6 +24,39 @@
       margin-bottom: 12px;
     }
 
+    #modeToggle {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    #modeToggle button {
+      flex: 1;
+      appearance: none;
+      background: rgba(4, 6, 18, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      color: rgba(180, 210, 255, 0.45);
+      border: 1px solid rgba(90, 130, 240, 0.22);
+      padding: 8px 0;
+      font-size: 10px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 117px;
+      outline: none;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    #modeToggle button:hover {
+      border-color: rgba(90, 130, 240, 0.5);
+      color: rgba(180, 210, 255, 0.7);
+    }
+    #modeToggle button.active {
+      background: rgba(90, 130, 240, 0.18);
+      border-color: rgba(90, 130, 240, 0.65);
+      color: #c4d8ff;
+    }
+
     #countrySelect {
       appearance: none;
       background: rgba(4, 6, 18, 0.88);
@@ -70,6 +103,10 @@
 <body>
   <div id="ui">
     <h1>Moon Country</h1>
+    <div id="modeToggle">
+      <button id="btn2d">2D</button>
+      <button id="btn3d" class="active">3D Map</button>
+    </div>
     <select id="countrySelect" disabled>
       <option value="">Loading…</option>
     </select>
@@ -103,14 +140,12 @@
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
     document.body.prepend(renderer.domElement);
 
     // ── Scene / Camera ────────────────────────────────────────────────────────
     const scene  = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 1000);
-    // Start facing the lit side — same direction as the sun (100, 70, 30)
-    camera.position.set(3,0, -3); // sun dir (Y −85 %) normalised × 2.8
+    camera.position.set(3, 0, -3);
 
     // ── Controls ──────────────────────────────────────────────────────────────
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -120,11 +155,11 @@
     controls.maxDistance      = 20;
     controls.autoRotate       = true;
     controls.autoRotateSpeed  = 0.1;
-    controls.minPolarAngle    = 0.1;          // prevent flipping over north pole
-    controls.maxPolarAngle    = Math.PI - 0.1; // prevent flipping over south pole
+    controls.minPolarAngle    = 0.1;
+    controls.maxPolarAngle    = Math.PI - 0.1;
     renderer.domElement.addEventListener('pointerdown', () => {
       controls.autoRotate = false;
-      flyTarget = null; // cancel any in-progress fly-to immediately
+      flyTarget = null;
     });
 
     // ── Stars ─────────────────────────────────────────────────────────────────
@@ -147,10 +182,9 @@
       })));
     }
 
-    // ── Moon textures (NASA) ──────────────────────────────────────────────────
+    // ── Moon textures ─────────────────────────────────────────────────────────
     setStatus('Loading moon textures…');
-
-    const loader  = new THREE.TextureLoader();
+    const loader   = new THREE.TextureLoader();
     const colorMap = loader.load('color_4k.jpg',
       () => setStatus('Fetching country data…'),
       undefined,
@@ -159,11 +193,6 @@
     const dispMap   = loader.load('ldem_disp.png');
     const normalMap = loader.load('moon_normals.png');
 
-    // Use the displacement image for both lighting-detail (bumpMap) and
-    // actual vertex displacement so craters appear physically raised/sunken.
-    // displacementScale 0.04 → max ~0.04 units above base radius.
-    // displacementBias  -0.012 centres the average near radius = 1.
-    // ── Moon mesh ─────────────────────────────────────────────────────────────
     const moon = new THREE.Mesh(
       new THREE.SphereGeometry(1, 256, 256),
       new THREE.MeshPhongMaterial({
@@ -179,47 +208,38 @@
     scene.add(moon);
 
     // ── Lighting ──────────────────────────────────────────────────────────────
-    // Moon albedo is ~0.07–0.12 so even intensity 1.0 clips highlights.
-    // Keep ambient near zero to preserve the dark-side terminator.
-    // scene.add(new THREE.AmbientLight(0xFFFFFF, 0.1));
     const sun = new THREE.DirectionalLight(0xFFFFFF, 1.4);
     sun.position.set(100, 5, 30);
     scene.add(sun);
-
     const light = new THREE.DirectionalLight(0xFFFFFF, 0.5);
     light.position.set(0.5, 0, 0);
+    light.castShadow = false;
+    light.shadow.camera.near = 0.1; light.shadow.camera.far = 200;
+    light.shadow.camera.left = light.shadow.camera.bottom = -5;
+    light.shadow.camera.right = light.shadow.camera.top = 5;
     scene.add(light);
 
-    light.castShadow = false;
-    light.shadow.camera.near = 0.1;
-    light.shadow.camera.far = 200;
-    light.shadow.camera.left = -5;
-    light.shadow.camera.right = 5;
-    light.shadow.camera.top = 5;
-    light.shadow.camera.bottom = -5;
-    
-    // ── Country outline helpers ────────────────────────────────────────────────
+    // ── Outline group ─────────────────────────────────────────────────────────
     const outlineGroup = new THREE.Group();
     scene.add(outlineGroup);
 
-    // All layers above the displacement ceiling (base 1.0 + displacementScale 0.01 = 1.01)
-    const R_LINE = 1.015;
-    const R_GLOW = 1.017;
+    // ── Mode toggle ───────────────────────────────────────────────────────────
+    let mode           = '3d';
+    let currentFeature = null;
 
-    // Thick borders via Line2 (LineBasicMaterial ignores linewidth on WebGL)
-    const lineMat = new LineMaterial({
-      color: 0xFF6622, linewidth: 2,
-      transparent: true, opacity: 0.90,
-      resolution: new THREE.Vector2(innerWidth, innerHeight),
-    });
-    const glowMat = new LineMaterial({
-      color: 0x66ffbb, linewidth: 5,
-      transparent: true, opacity: 0.14,
-      resolution: new THREE.Vector2(innerWidth, innerHeight),
-    });
+    document.getElementById('btn2d').addEventListener('click', () => setMode('2d'));
+    document.getElementById('btn3d').addEventListener('click', () => setMode('3d'));
 
+    function setMode(m) {
+      mode = m;
+      document.getElementById('btn2d').classList.toggle('active', m === '2d');
+      document.getElementById('btn3d').classList.toggle('active', m === '3d');
+      if (currentFeature) drawCountry(currentFeature);
+    }
+
+    // ── Shared utilities ──────────────────────────────────────────────────────
     function ll2v(lat, lon, r) {
-      const phi   = (90 - lat) * (Math.PI / 180);
+      const phi   = (90 - lat)  * (Math.PI / 180);
       const theta = (lon + 180) * (Math.PI / 180);
       return new THREE.Vector3(
         -r * Math.sin(phi) * Math.cos(theta),
@@ -233,19 +253,14 @@
       outlineGroup.clear();
     }
 
-    // Earth radius / Moon radius ≈ 3.669 — scales country size to the moon
     const EARTH_MOON_SCALE = 6371 / 1737;
 
-    // Wrap a longitude difference into [-180, 180]
     function wrapDeg(d) {
       while (d >  180) d -= 360;
       while (d < -180) d += 360;
       return d;
     }
 
-    // Unwrap ring so consecutive vertices never jump more than 180° in longitude.
-    // Anchors the first vertex near refLon, then chains each next vertex to the
-    // previous one. This eliminates the antimeridian "big line" for US, Russia, etc.
     function unwrapRing(ring, refLon) {
       if (!ring.length) return ring;
       const out = [];
@@ -258,30 +273,17 @@
       return out;
     }
 
-    // Convert a raw GeoJSON ring to flat [u, v] pairs (in radians, centred on origin).
-    // Uses azimuthal equidistant projection centred on (centLon, centLat).
-    // This preserves shape correctly for countries of any size — small countries
-    // look identical to equirectangular, large ones (Russia, Canada) get correct
-    // proportions instead of being horizontally stretched.
     function ringToFlat(ring, centLon, centLat) {
       const φ1 = centLat * Math.PI / 180;
       const sinφ1 = Math.sin(φ1), cosφ1 = Math.cos(φ1);
-
       return unwrapRing(ring, centLon).map(([lon, lat]) => {
         const φ2 = lat * Math.PI / 180;
         const dλ = (lon - centLon) * Math.PI / 180;
         const sinφ2 = Math.sin(φ2), cosφ2 = Math.cos(φ2);
-
-        // Angular distance from centroid
         const cosC = sinφ1 * sinφ2 + cosφ1 * cosφ2 * Math.cos(dλ);
         const c = Math.acos(Math.max(-1, Math.min(1, cosC)));
-
         if (c < 1e-10) return [0, 0];
-
-        // Scale factor: c / sin(c) — approaches 1 for small c
         const k = c / Math.sin(c);
-
-        // Azimuthal equidistant: +x = east, +y = north
         return [
           k * cosφ2 * Math.sin(dλ),
           k * (cosφ1 * sinφ2 - sinφ1 * cosφ2 * Math.cos(dλ)),
@@ -289,84 +291,6 @@
       });
     }
 
-
-    // Local "north" direction in the tangent plane at a point on the sphere.
-    function localNorth(dir) {
-      const up = new THREE.Vector3(0, 1, 0);
-      const n = up.clone().sub(dir.clone().multiplyScalar(dir.dot(up)));
-      if (n.lengthSq() < 1e-10) return new THREE.Vector3(1, 0, 0); // pole fallback
-      return n.normalize();
-    }
-
-    // Convert a raw GeoJSON ring to 3D points on the moon surface.
-    // Uses spherical rotation: each vertex's angular offset from the centroid
-    // on Earth is scaled by EARTH_MOON_SCALE and applied from the placement
-    // point on the Moon, so every vertex lies exactly on the sphere.
-    function ringTo3D(ring, centLon, centLat, placeLon, placeLat, r) {
-      const cDir = ll2v(centLat, centLon, 1).normalize();
-      const pDir = ll2v(placeLat, placeLon, 1).normalize();
-
-      // Frame-to-frame rotation preserving north orientation
-      const cNorth = localNorth(cDir);
-      const cEast  = new THREE.Vector3().crossVectors(cNorth, cDir);
-      const pNorth = localNorth(pDir);
-      const pEast  = new THREE.Vector3().crossVectors(pNorth, pDir);
-
-      const qC = new THREE.Quaternion().setFromRotationMatrix(
-        new THREE.Matrix4().makeBasis(cEast, cNorth, cDir));
-      const qP = new THREE.Quaternion().setFromRotationMatrix(
-        new THREE.Matrix4().makeBasis(pEast, pNorth, pDir));
-      const qRebase = qP.clone().multiply(qC.clone().invert());
-
-      return unwrapRing(ring, centLon).map(([lon, lat]) => {
-        const vDir = ll2v(lat, lon, 1).normalize();
-        const dot = Math.max(-1, Math.min(1, cDir.dot(vDir)));
-        const angle = Math.acos(dot);
-        if (angle < 1e-10) return pDir.clone().multiplyScalar(r);
-
-        const axis = new THREE.Vector3().crossVectors(cDir, vDir).normalize();
-        const rebasedAxis = axis.clone().applyQuaternion(qRebase);
-        const scaledAngle = angle * EARTH_MOON_SCALE;
-        const qScaled = new THREE.Quaternion().setFromAxisAngle(rebasedAxis, scaledAngle);
-        return pDir.clone().applyQuaternion(qScaled).multiplyScalar(r);
-      });
-    }
-
-    function addRing(ring, r, mat, centLon, centLat, placeLon, placeLat) {
-      if (ring.length < 2) return;
-      // openRing strips the GeoJSON closing vertex (first==last) to avoid a
-      // degenerate zero-length segment when we re-close with pts[0] below.
-      const raw = ringTo3D(openRing(ring), centLon, centLat, placeLon, placeLat, r);
-      raw.push(raw[0].clone());  // properly close the ring
-
-      // Subdivide long segments so the line follows the great-circle arc on the
-      // sphere. Without this, sparse political borders (e.g. India–China, Canada's
-      // Arctic coast) render as straight chords that cut diagonally through the fill.
-      const MAX_EDGE = 0.18;
-      const pts = [raw[0]];
-      for (let i = 1; i < raw.length; i++) {
-        const a = raw[i - 1], b = raw[i];
-        const dist = a.distanceTo(b);
-        if (dist > MAX_EDGE) {
-          const n = Math.ceil(dist / MAX_EDGE);
-          for (let j = 1; j < n; j++) {
-            const t = j / n;
-            pts.push(a.clone().lerp(b, t).normalize().multiplyScalar(r));
-          }
-        }
-        pts.push(b);
-      }
-
-      const flat = [];
-      for (const p of pts) flat.push(p.x, p.y, p.z);
-      const geo = new LineGeometry();
-      geo.setPositions(flat);
-      const line = new Line2(geo, mat);
-      line.computeLineDistances();
-      outlineGroup.add(line);
-    }
-
-    // Strip closing vertex from a GeoJSON ring (first == last).
     function openRing(ring) {
       if (ring.length > 1 &&
           ring[0][0] === ring[ring.length - 1][0] &&
@@ -375,28 +299,63 @@
       return ring;
     }
 
-    // ── Camera fly-to ──────────────────────────────────────────────────────────
-    let flyTarget   = null;  // unit direction vector to slerp toward
-    let flyDistance = null;  // target camera distance to lerp toward
+    function v2ll(v) {
+      const p   = v.clone().normalize();
+      const lat = 90 - Math.acos(Math.max(-1, Math.min(1, p.y))) * 180 / Math.PI;
+      const lon = Math.atan2(p.z, -p.x) * 180 / Math.PI - 180;
+      return { lat, lon };
+    }
+
+    function simpleRingCentroid(ring) {
+      const uw = unwrapRing(ring, ring[0][0]);
+      const n  = uw.length;
+      return [uw.reduce((s, p) => s + p[0], 0) / n,
+              uw.reduce((s, p) => s + p[1], 0) / n];
+    }
+
+    function countryCentroid(feature) {
+      const { type, coordinates } = feature.geometry;
+      const outerRings = type === 'Polygon'
+        ? [coordinates[0]]
+        : coordinates.map(poly => poly[0]);
+      if (!outerRings.length || !outerRings[0].length) return [0, 0];
+      const refLon = outerRings[0][0][0];
+      let totalW = 0, sumLon = 0, sumLat = 0;
+      for (const ring of outerRings) {
+        const pts = unwrapRing(ring, refLon);
+        const n   = pts.length;
+        let area = 0;
+        for (let i = 0; i < n; i++) {
+          const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % n];
+          area += x0 * y1 - x1 * y0;
+        }
+        const w = Math.abs(area) / 2;
+        if (w < 1e-10) continue;
+        const cLon = pts.reduce((s, p) => s + p[0], 0) / n;
+        const cLat = pts.reduce((s, p) => s + p[1], 0) / n;
+        totalW += w; sumLon += cLon * w; sumLat += cLat * w;
+      }
+      if (totalW < 1e-10) {
+        const pts = unwrapRing(outerRings[0], refLon);
+        return [pts.reduce((s,p)=>s+p[0],0)/pts.length, pts.reduce((s,p)=>s+p[1],0)/pts.length];
+      }
+      return [sumLon / totalW, sumLat / totalW];
+    }
+
+    let flyTarget   = null;
+    let flyDistance = null;
 
     function flyTo(lat, lon, maxFlatRadius) {
       flyTarget = ll2v(lat, lon, 1).normalize();
       controls.autoRotate = false;
-
       if (maxFlatRadius !== undefined) {
-        // Scale Earth-surface radians to angular extent on the moon.
-        // Cap at π/2: beyond that the polygon wraps behind the limb and is occluded anyway,
-        // and cos(alpha) going negative breaks the formula when alpha > π/2.
         const alpha   = Math.min(Math.PI / 2, maxFlatRadius * EARTH_MOON_SCALE);
         const halfFov = (45 / 2) * Math.PI / 180;
-        // Distance so the farthest visible vertex fits inside the FOV with 30% padding.
-        // Also enforce a minimum of 2.0 so tiny islands still show moon context.
         const needed  = Math.sin(alpha) / Math.tan(halfFov) * 1.3 + Math.cos(alpha);
         flyDistance   = Math.min(Math.max(needed, 2.0), controls.maxDistance);
       }
     }
 
-    // Convert sun position to the lat/lon on the moon directly facing the sun
     function sunSubsolarPoint() {
       const d = sun.position.clone().normalize();
       const phi = Math.acos(Math.max(-1, Math.min(1, d.y)));
@@ -406,77 +365,223 @@
       return { lat, lon };
     }
 
-    // Compute area-weighted centroid across all outer rings of a country.
-    // Uses the shoelace formula to get each polygon's area, then weights its
-    // vertex-average centroid by that area. This prevents small polygons with
-    // many vertices (Aleutian Islands, Hawaii) from pulling the centroid away
-    // from the dominant landmass (e.g. contiguous USA or mainland Russia).
-    // All longitudes are unwrapped from a common reference before averaging.
-    function countryCentroid(feature) {
-      const { type, coordinates } = feature.geometry;
-      const outerRings = type === 'Polygon'
-        ? [coordinates[0]]
-        : coordinates.map(poly => poly[0]);
+    // ── 2D mode ───────────────────────────────────────────────────────────────
+    // Flat tangent-plane polygon placed at the subsolar point.
+    // Earcut triangulation with holes works perfectly in this flat space,
+    // giving clean gradient fill for all countries including concave ones.
 
-      if (!outerRings.length || !outerRings[0].length) return [0, 0];
+    const R_FILL_2D = 1.028;
+    const R_LINE_2D = 1.0282;
+    const R_GLOW_2D = 1.030;
 
-      const refLon = outerRings[0][0][0];
-      let totalW = 0, sumLon = 0, sumLat = 0;
-
-      for (const ring of outerRings) {
-        const pts = unwrapRing(ring, refLon);
-        const n   = pts.length;
-
-        // Shoelace area (lon/lat units — only used for relative weighting)
-        let area = 0;
-        for (let i = 0; i < n; i++) {
-          const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % n];
-          area += x0 * y1 - x1 * y0;
+    const fillMat2d = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
-        const w = Math.abs(area) / 2;
-        if (w < 1e-10) continue;
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        void main() {
+          vec3 colBot = vec3(0.0,  1.0,  0.53);
+          vec3 colTop = vec3(0.05, 0.72, 1.0);
+          vec3 color  = mix(colBot, colTop, vUv.y);
+          float edge  = distance(vUv, vec2(0.5)) * 2.0;
+          float alpha = mix(0.32, 0.10, clamp(edge, 0.0, 1.0));
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
+    });
 
-        const cLon = pts.reduce((s, p) => s + p[0], 0) / n;
-        const cLat = pts.reduce((s, p) => s + p[1], 0) / n;
-        totalW += w; sumLon += cLon * w; sumLat += cLat * w;
+    const lineMat2d = new LineMaterial({
+      color: 0x00ff88, linewidth: 2,
+      transparent: true, opacity: 0.90,
+      resolution: new THREE.Vector2(innerWidth, innerHeight),
+    });
+    const glowMat2d = new LineMaterial({
+      color: 0x66ffbb, linewidth: 5,
+      transparent: true, opacity: 0.14,
+      resolution: new THREE.Vector2(innerWidth, innerHeight),
+    });
+
+    function tangentQuaternion(placeLat, placeLon) {
+      const phi   = (90 - placeLat) * Math.PI / 180;
+      const theta = (placeLon + 180) * Math.PI / 180;
+      const east  = new THREE.Vector3(Math.sin(theta), 0, Math.cos(theta));
+      const north = new THREE.Vector3(
+         Math.cos(phi) * Math.cos(theta),
+         Math.sin(phi),
+        -Math.cos(phi) * Math.sin(theta)
+      );
+      const norm  = new THREE.Vector3(
+        -Math.sin(phi) * Math.cos(theta),
+         Math.cos(phi),
+         Math.sin(phi) * Math.sin(theta)
+      );
+      return new THREE.Quaternion().setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(east, north, norm)
+      );
+    }
+
+    function ringToUV(ring, centLon, centLat, r) {
+      const k = EARTH_MOON_SCALE * r;
+      return ringToFlat(ring, centLon, centLat).map(([u, v]) =>
+        new THREE.Vector2(u * k, v * k)
+      );
+    }
+
+    function addRing2d(ring, r, mat, centLon, centLat, placeLon, placeLat) {
+      if (ring.length < 2) return;
+      const k    = EARTH_MOON_SCALE * r;
+      const quat = tangentQuaternion(placeLat, placeLon);
+      const orig = ll2v(placeLat, placeLon, r);
+      const pts  = ringToFlat(ring, centLon, centLat).map(([u, v]) =>
+        new THREE.Vector3(u * k, v * k, 0).applyQuaternion(quat).add(orig)
+      );
+      pts.push(pts[0].clone());
+      const flat = [];
+      for (const p of pts) flat.push(p.x, p.y, p.z);
+      const geo = new LineGeometry();
+      geo.setPositions(flat);
+      const line = new Line2(geo, mat);
+      line.computeLineDistances();
+      outlineGroup.add(line);
+    }
+
+    function addFillMesh2d(rings, centLon, centLat, placeLon, placeLat, r, mat) {
+      const uvs   = rings.map(ring => ringToUV(ring, centLon, centLat, r));
+      const shape = new THREE.Shape(uvs[0]);
+      uvs.slice(1).forEach(uv => shape.holes.push(new THREE.Path(uv)));
+      const geo = new THREE.ShapeGeometry(shape);
+      // Remap UV to [0,1] for the gradient shader
+      {
+        const uv = geo.attributes.uv;
+        let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+        for (let i = 0; i < uv.count; i++) {
+          minU = Math.min(minU, uv.getX(i)); maxU = Math.max(maxU, uv.getX(i));
+          minV = Math.min(minV, uv.getY(i)); maxV = Math.max(maxV, uv.getY(i));
+        }
+        const rU = maxU - minU || 1, rV = maxV - minV || 1;
+        for (let i = 0; i < uv.count; i++)
+          uv.setXY(i, (uv.getX(i) - minU) / rU, (uv.getY(i) - minV) / rV);
+        uv.needsUpdate = true;
       }
-
-      if (totalW < 1e-10) {
-        // Fallback: plain vertex average of first ring
-        const pts = unwrapRing(outerRings[0], refLon);
-        return [pts.reduce((s,p)=>s+p[0],0)/pts.length, pts.reduce((s,p)=>s+p[1],0)/pts.length];
-      }
-      return [sumLon / totalW, sumLat / totalW];
+      const quat = tangentQuaternion(placeLat, placeLon);
+      const fill = new THREE.Mesh(geo, mat);
+      fill.quaternion.copy(quat);
+      fill.position.copy(ll2v(placeLat, placeLon, r));
+      outlineGroup.add(fill);
     }
 
-    // Convert a 3D moon-surface point back to (lon, lat)
-    function v2ll(v) {
-      const p   = v.clone().normalize();
-      const lat = 90 - Math.acos(Math.max(-1, Math.min(1, p.y))) * 180 / Math.PI;
-      const lon = Math.atan2(p.z, -p.x) * 180 / Math.PI - 180;
-      return { lat, lon };
-    }
-
-    // Simple vertex-average centroid of a raw GeoJSON ring (open, unwrapped from first vertex)
-    function simpleRingCentroid(ring) {
-      const uw = unwrapRing(ring, ring[0][0]);
-      const n  = uw.length;
-      return [uw.reduce((s, p) => s + p[0], 0) / n,
-              uw.reduce((s, p) => s + p[1], 0) / n];
-    }
-
-    function drawCountry(feature) {
+    function drawCountry2d(feature) {
       clearOutlines();
       const { type, coordinates } = feature.geometry;
-
-      // Country-level centroid — used ONLY to determine the correct RELATIVE placement
-      // of each polygon's centroid on the Moon (preserves shapes like Alaska vs. USA).
-      const [countryCentLon, countryCentLat] = countryCentroid(feature);
-
-      // Where to place the overall country on the moon — the subsolar point
+      const [centLon, centLat] = countryCentroid(feature);
       const { lat: placeLat, lon: placeLon } = sunSubsolarPoint();
+      let maxFlatR = 0;
+      const measurePoly = rings => {
+        for (const ring of rings)
+          for (const [u, v] of ringToFlat(ring, centLon, centLat))
+            maxFlatR = Math.max(maxFlatR, Math.sqrt(u * u + v * v));
+      };
+      if (type === 'Polygon')      measurePoly(coordinates);
+      if (type === 'MultiPolygon') coordinates.forEach(measurePoly);
+      flyTo(placeLat, placeLon, maxFlatR);
+      const processPolygon = poly => {
+        addFillMesh2d(poly, centLon, centLat, placeLon, placeLat, R_FILL_2D, fillMat2d);
+        poly.forEach(ring => {
+          addRing2d(ring, R_LINE_2D, lineMat2d, centLon, centLat, placeLon, placeLat);
+          addRing2d(ring, R_GLOW_2D, glowMat2d, centLon, centLat, placeLon, placeLat);
+        });
+      };
+      if (type === 'Polygon')      processPolygon(coordinates);
+      if (type === 'MultiPolygon') coordinates.forEach(processPolygon);
+    }
 
-      // Measure max angular extent across all rings for auto-zoom
+    // ── 3D mode ───────────────────────────────────────────────────────────────
+    // Spherical rotation projection: every vertex lies exactly on the moon surface.
+    // Uses frame-to-frame quaternion to preserve north orientation.
+
+    const R_LINE_3D = 1.015;
+    const R_GLOW_3D = 1.017;
+
+    const lineMat3d = new LineMaterial({
+      color: 0xFF6622, linewidth: 2,
+      transparent: true, opacity: 0.90,
+      resolution: new THREE.Vector2(innerWidth, innerHeight),
+    });
+    const glowMat3d = new LineMaterial({
+      color: 0xFF9955, linewidth: 5,
+      transparent: true, opacity: 0.14,
+      resolution: new THREE.Vector2(innerWidth, innerHeight),
+    });
+
+    function localNorth(dir) {
+      const up = new THREE.Vector3(0, 1, 0);
+      const n = up.clone().sub(dir.clone().multiplyScalar(dir.dot(up)));
+      if (n.lengthSq() < 1e-10) return new THREE.Vector3(1, 0, 0);
+      return n.normalize();
+    }
+
+    function ringTo3D(ring, centLon, centLat, placeLon, placeLat, r) {
+      const cDir = ll2v(centLat, centLon, 1).normalize();
+      const pDir = ll2v(placeLat, placeLon, 1).normalize();
+      const cNorth = localNorth(cDir);
+      const cEast  = new THREE.Vector3().crossVectors(cNorth, cDir);
+      const pNorth = localNorth(pDir);
+      const pEast  = new THREE.Vector3().crossVectors(pNorth, pDir);
+      const qC = new THREE.Quaternion().setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(cEast, cNorth, cDir));
+      const qP = new THREE.Quaternion().setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(pEast, pNorth, pDir));
+      const qRebase = qP.clone().multiply(qC.clone().invert());
+      return unwrapRing(ring, centLon).map(([lon, lat]) => {
+        const vDir = ll2v(lat, lon, 1).normalize();
+        const dot  = Math.max(-1, Math.min(1, cDir.dot(vDir)));
+        const angle = Math.acos(dot);
+        if (angle < 1e-10) return pDir.clone().multiplyScalar(r);
+        const axis        = new THREE.Vector3().crossVectors(cDir, vDir).normalize();
+        const rebasedAxis = axis.clone().applyQuaternion(qRebase);
+        const qScaled     = new THREE.Quaternion().setFromAxisAngle(rebasedAxis, angle * EARTH_MOON_SCALE);
+        return pDir.clone().applyQuaternion(qScaled).multiplyScalar(r);
+      });
+    }
+
+    function addRing3d(ring, r, mat, centLon, centLat, placeLon, placeLat) {
+      if (ring.length < 2) return;
+      const raw = ringTo3D(openRing(ring), centLon, centLat, placeLon, placeLat, r);
+      raw.push(raw[0].clone());
+      const MAX_EDGE = 0.18;
+      const pts = [raw[0]];
+      for (let i = 1; i < raw.length; i++) {
+        const a = raw[i - 1], b = raw[i];
+        const dist = a.distanceTo(b);
+        if (dist > MAX_EDGE) {
+          const n = Math.ceil(dist / MAX_EDGE);
+          for (let j = 1; j < n; j++)
+            pts.push(a.clone().lerp(b, j / n).normalize().multiplyScalar(r));
+        }
+        pts.push(b);
+      }
+      const flat = [];
+      for (const p of pts) flat.push(p.x, p.y, p.z);
+      const geo = new LineGeometry();
+      geo.setPositions(flat);
+      const line = new Line2(geo, mat);
+      line.computeLineDistances();
+      outlineGroup.add(line);
+    }
+
+    function drawCountry3d(feature) {
+      clearOutlines();
+      const { type, coordinates } = feature.geometry;
+      const [countryCentLon, countryCentLat] = countryCentroid(feature);
+      const { lat: placeLat, lon: placeLon } = sunSubsolarPoint();
       let maxFlatR = 0;
       const measurePoly = rings => {
         for (const ring of rings)
@@ -485,10 +590,8 @@
       };
       if (type === 'Polygon')      measurePoly(coordinates);
       if (type === 'MultiPolygon') coordinates.forEach(measurePoly);
-
       flyTo(placeLat, placeLon, maxFlatR);
 
-      // Compute shoelace area (in lon/lat units) for filtering tiny island polygons
       function polyArea(ring) {
         const pts = unwrapRing(ring, ring[0][0]);
         let a = 0;
@@ -499,36 +602,32 @@
         return Math.abs(a) / 2;
       }
 
-      // For MultiPolygons, find the largest polygon's area and skip any polygon
-      // smaller than 0.5% of it. This removes tiny island territories (Guam,
-      // American Samoa, etc.) that appear as confusing scattered dots at Moon scale.
       const allPolys = type === 'Polygon' ? [coordinates] : coordinates;
       let maxArea = 0;
-      if (allPolys.length > 1) {
-        for (const poly of allPolys)
-          maxArea = Math.max(maxArea, polyArea(poly[0]));
-      }
+      if (allPolys.length > 1)
+        for (const poly of allPolys) maxArea = Math.max(maxArea, polyArea(poly[0]));
 
       const processPolygon = poly => {
-        // Skip tiny polygons in MultiPolygons
         if (maxArea > 0 && polyArea(poly[0]) < maxArea * 0.005) return;
-
-        // Each polygon (e.g. Alaska, contiguous US) uses its OWN outer-ring
-        // centroid as the rotation reference.
         const [polyCentLon, polyCentLat] = simpleRingCentroid(openRing(poly[0]));
-
-        // Apply country-level rotation to find where this polygon's centroid lands on Moon
-        const centMoonPt  = ringTo3D([[polyCentLon, polyCentLat]],
-                                     countryCentLon, countryCentLat,
-                                     placeLon, placeLat, 1)[0];
+        const centMoonPt = ringTo3D([[polyCentLon, polyCentLat]],
+                                    countryCentLon, countryCentLat,
+                                    placeLon, placeLat, 1)[0];
         const { lat: polyPlaceLat, lon: polyPlaceLon } = v2ll(centMoonPt);
-
         poly.forEach(ring => {
-          addRing(ring, R_LINE, lineMat, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
+          addRing3d(ring, R_LINE_3D, lineMat3d, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
+          addRing3d(ring, R_GLOW_3D, glowMat3d, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
         });
       };
       if (type === 'Polygon')      processPolygon(coordinates);
       if (type === 'MultiPolygon') coordinates.forEach(processPolygon);
+    }
+
+    // ── Unified entry point ───────────────────────────────────────────────────
+    function drawCountry(feature) {
+      currentFeature = feature;
+      if (mode === '2d') drawCountry2d(feature);
+      else               drawCountry3d(feature);
     }
 
     // ── Fetch GeoJSON ─────────────────────────────────────────────────────────
@@ -543,7 +642,6 @@
       .then(({ features }) => {
         features.sort((a, b) =>
           (a.properties.NAME || '').localeCompare(b.properties.NAME || ''));
-
         sel.innerHTML = '<option value="">— Select a Country —</option>';
         for (const f of features) {
           const name = f.properties.NAME || f.properties.ADMIN || '?';
@@ -553,11 +651,11 @@
         }
         sel.disabled = false;
         setStatus(`${features.length} countries ready`);
-
         sel.addEventListener('change', e => {
           const name = e.target.value;
           if (!name) {
             clearOutlines();
+            currentFeature = null;
             setStatus(`${features.length} countries ready`);
             return;
           }
@@ -580,36 +678,32 @@
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-      lineMat.resolution.set(innerWidth, innerHeight);
-      glowMat.resolution.set(innerWidth, innerHeight);
+      [lineMat2d, glowMat2d, lineMat3d, glowMat3d].forEach(m =>
+        m.resolution.set(innerWidth, innerHeight));
     });
 
     // ── Render loop ───────────────────────────────────────────────────────────
     const clock = new THREE.Clock();
     (function animate() {
       requestAnimationFrame(animate);
-
-      // Smooth camera fly-to: slerp direction + lerp distance simultaneously
       if (flyTarget || flyDistance !== null) {
         let dist = camera.position.length();
         const dir = camera.position.clone().normalize();
-
         if (flyTarget) {
           dir.lerp(flyTarget, 0.12).normalize();
           if (dir.distanceTo(flyTarget) < 0.005) flyTarget = null;
         }
-
         if (flyDistance !== null) {
           dist += (flyDistance - dist) * 0.12;
           if (Math.abs(dist - flyDistance) < 0.01) { dist = flyDistance; flyDistance = null; }
         }
-
         camera.position.copy(dir.multiplyScalar(dist));
       }
-
       controls.update();
-      const t = clock.getElapsedTime();
-      lineMat.opacity = 0.78 + 0.18 * Math.sin(t * 1.8);
+      const t   = clock.getElapsedTime();
+      const osc = 0.78 + 0.18 * Math.sin(t * 1.8);
+      lineMat2d.opacity = osc;
+      lineMat3d.opacity = osc;
       renderer.render(scene, camera);
     })();
   </script>
