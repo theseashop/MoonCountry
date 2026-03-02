@@ -205,11 +205,18 @@
         shininess:         0
       })
     );
+    moon.receiveShadow = true;
     scene.add(moon);
 
     // ── Lighting ──────────────────────────────────────────────────────────────
     const sun = new THREE.DirectionalLight(0xFFFFFF, 1.4);
     sun.position.set(100, 5, 30);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 0.1;
+    sun.shadow.camera.far  = 200;
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -5;
+    sun.shadow.camera.right = sun.shadow.camera.top   =  5;
     scene.add(sun);
     const light = new THREE.DirectionalLight(0xFFFFFF, 0.5);
     light.position.set(0.5, 0, 0);
@@ -475,6 +482,7 @@
       const fill = new THREE.Mesh(geo, mat);
       fill.quaternion.copy(quat);
       fill.position.copy(ll2v(placeLat, placeLon, r));
+      fill.castShadow = true;
       outlineGroup.add(fill);
     }
 
