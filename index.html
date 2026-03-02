@@ -203,39 +203,12 @@
     scene.add(outlineGroup);
 
     // All layers above the displacement ceiling (base 1.0 + displacementScale 0.01 = 1.01)
-    const R_FILL = 1.013;
     const R_LINE = 1.015;
     const R_GLOW = 1.017;
 
-    // Painted-on fill: more opaque, slightly glowing, hugs the surface.
-    // Uses world-space Y for the gradient (via the uv.y attribute) so the
-    // color is perfectly continuous across all triangle edges — no seams
-    // from earcut bridge triangles or subdivision boundaries.
-    const fillMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: true,           // prevents double-alpha from overlapping triangles
-      depthFunc: THREE.LessDepth, // strict LESS so same-depth fragments render once
-      side: THREE.DoubleSide,
-      vertexShader: `
-        varying float vT;
-        void main() {
-          vT = uv.y;   // gradient T stored in uv.y by addFillMesh
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying float vT;
-        void main() {
-          vec3 color  = vec3(0.65, 0.72, 0.85);  // blue-gray
-          float alpha = 0.04;
-          gl_FragColor = vec4(color, alpha);
-        }
-      `,
-    });
-
     // Thick borders via Line2 (LineBasicMaterial ignores linewidth on WebGL)
     const lineMat = new LineMaterial({
-      color: 0x00ff88, linewidth: 2,
+      color: 0xFF6622, linewidth: 2,
       transparent: true, opacity: 0.90,
       resolution: new THREE.Vector2(innerWidth, innerHeight),
     });
@@ -285,27 +258,6 @@
       return out;
     }
 
-
-    // Build the geographic tangent basis at (placeLat, placeLon) — from main branch.
-    function tangentQuaternion(placeLat, placeLon) {
-      const phi   = (90 - placeLat) * Math.PI / 180;
-      const theta = (placeLon + 180) * Math.PI / 180;
-      const east  = new THREE.Vector3(Math.sin(theta), 0, Math.cos(theta));
-      const north = new THREE.Vector3(
-         Math.cos(phi) * Math.cos(theta),
-         Math.sin(phi),
-        -Math.cos(phi) * Math.sin(theta)
-      );
-      const norm  = new THREE.Vector3(
-        -Math.sin(phi) * Math.cos(theta),
-         Math.cos(phi),
-         Math.sin(phi) * Math.sin(theta)
-      );
-      return new THREE.Quaternion().setFromRotationMatrix(
-        new THREE.Matrix4().makeBasis(east, north, norm)
-      );
-    }
-
     // Convert a raw GeoJSON ring to flat [u, v] pairs (in radians, centred on origin).
     // Uses azimuthal equidistant projection centred on (centLon, centLat).
     // This preserves shape correctly for countries of any size — small countries
@@ -337,13 +289,6 @@
       });
     }
 
-    // Convert a raw GeoJSON ring to flat 2D UV points (for ShapeGeometry).
-    function ringToUV(ring, centLon, centLat, r) {
-      const k = EARTH_MOON_SCALE * r;
-      return ringToFlat(ring, centLon, centLat).map(([u, v]) =>
-        new THREE.Vector2(u * k, v * k)
-      );
-    }
 
     // Local "north" direction in the tangent plane at a point on the sphere.
     function localNorth(dir) {
@@ -428,49 +373,6 @@
           ring[0][1] === ring[ring.length - 1][1])
         return ring.slice(0, -1);
       return ring;
-    }
-
-    function addFillMesh(rings, centLon, centLat, placeLon, placeLat, r, mat) {
-      const open = rings.map(openRing);
-
-      // Step 1: Build THREE.Shape with holes — same as main branch.
-      // THREE.ShapeGeometry uses earcut internally and handles holes correctly,
-      // which is why the main branch fill works cleanly for all countries.
-      const uvs   = open.map(ring => ringToUV(ring, centLon, centLat, r));
-      const shape = new THREE.Shape(uvs[0]);
-      uvs.slice(1).forEach(uv => shape.holes.push(new THREE.Path(uv)));
-      const geo = new THREE.ShapeGeometry(shape);
-
-      // Step 2: Project every vertex radially onto the sphere surface.
-      // The ShapeGeometry vertices are in the flat tangent plane at (placeLon, placeLat).
-      // Rotating to world space and then normalizing+scaling snaps each vertex to the
-      // sphere — no subdivision needed, so thin earcut triangles stay invisible.
-      const quat = tangentQuaternion(placeLat, placeLon);
-      const orig = ll2v(placeLat, placeLon, r);
-      const pos  = geo.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        const p = new THREE.Vector3(pos.getX(i), pos.getY(i), 0)
-          .applyQuaternion(quat).add(orig).normalize().multiplyScalar(r);
-        pos.setXYZ(i, p.x, p.y, p.z);
-      }
-      pos.needsUpdate = true;
-
-      // Step 3: Remap UV to [0,1] for the gradient shader.
-      const uv = geo.attributes.uv;
-      let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
-      for (let i = 0; i < uv.count; i++) {
-        minU = Math.min(minU, uv.getX(i)); maxU = Math.max(maxU, uv.getX(i));
-        minV = Math.min(minV, uv.getY(i)); maxV = Math.max(maxV, uv.getY(i));
-      }
-      const rU = maxU - minU || 1, rV = maxV - minV || 1;
-      for (let i = 0; i < uv.count; i++)
-        uv.setXY(i, (uv.getX(i) - minU) / rU, (uv.getY(i) - minV) / rV);
-      uv.needsUpdate = true;
-
-      geo.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.renderOrder = -1;
-      outlineGroup.add(mesh);
     }
 
     // ── Camera fly-to ──────────────────────────────────────────────────────────
@@ -621,7 +523,6 @@
                                      placeLon, placeLat, 1)[0];
         const { lat: polyPlaceLat, lon: polyPlaceLon } = v2ll(centMoonPt);
 
-        addFillMesh(poly, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat, R_FILL, fillMat);
         poly.forEach(ring => {
           addRing(ring, R_LINE, lineMat, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
         });
