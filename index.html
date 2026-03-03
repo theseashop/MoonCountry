@@ -90,7 +90,7 @@
 
     #hint {
       position: fixed;
-      bottom: 22px;
+      bottom: 48px;
       left: 50%;
       transform: translateX(-50%);
       font-size: 10px;
@@ -100,6 +100,83 @@
       pointer-events: none;
       white-space: nowrap;
     }
+
+    #footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      padding: 10px 0;
+      background: rgba(4, 6, 18, 0.72);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 10;
+    }
+    #footer a {
+      font-size: 10px;
+      letter-spacing: 1.8px;
+      text-transform: uppercase;
+      color: rgba(180, 210, 255, 0.45);
+      text-decoration: none;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    #footer a:hover { color: rgba(180, 210, 255, 0.85); }
+    #footer span { color: rgba(180, 210, 255, 0.18); font-size: 10px; }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 10, 0.72);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: rgba(8, 12, 30, 0.96);
+      border: 1px solid rgba(90, 130, 240, 0.22);
+      border-radius: 14px;
+      padding: 36px 40px;
+      max-width: 520px;
+      width: calc(100% - 48px);
+      max-height: 80vh;
+      overflow-y: auto;
+      position: relative;
+    }
+    .modal h2 {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #c4d8ff;
+      margin-bottom: 18px;
+    }
+    .modal p {
+      font-size: 13px;
+      line-height: 1.75;
+      color: rgba(180, 210, 255, 0.6);
+      margin-bottom: 12px;
+    }
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 18px;
+      background: none;
+      border: none;
+      color: rgba(180, 210, 255, 0.4);
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px;
+    }
+    .modal-close:hover { color: #c4d8ff; }
   </style>
 </head>
 <body>
@@ -115,6 +192,72 @@
     <div id="status">Initialising…</div>
   </div>
   <div id="hint">Scroll · Zoom &nbsp;—&nbsp; Drag · Rotate</div>
+
+  <div id="footer">
+    <a onclick="openModal('about')">About</a>
+    <span>·</span>
+    <a onclick="openModal('how')">How it works</a>
+    <span>·</span>
+    <a onclick="openModal('privacy')">Privacy Policy</a>
+    <span>·</span>
+    <a onclick="openModal('cookies')">Cookie Policy</a>
+  </div>
+
+  <!-- About -->
+  <div class="modal-overlay" id="modal-about">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('about')">&#x2715;</button>
+      <h2>About</h2>
+      <p>Countries on the Moon is an interactive 3D visualisation that places any country's outline onto the surface of the Moon, letting you compare its true size against the lunar landscape.</p>
+      <p>Built with Three.js and GeoJSON data from Natural Earth. Country polygons are projected using a spherical rotation algorithm that preserves shape and area at any scale.</p>
+    </div>
+  </div>
+
+  <!-- How it works -->
+  <div class="modal-overlay" id="modal-how">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('how')">&#x2715;</button>
+      <h2>How it works</h2>
+      <p>Select a country from the dropdown. Its polygon is loaded from Natural Earth GeoJSON data and projected onto the Moon's surface.</p>
+      <p><strong style="color:#c4d8ff">Curved mode</strong> — each vertex is placed directly on the sphere using a spherical rotation, so the outline hugs the Moon's surface regardless of the country's size.</p>
+      <p><strong style="color:#c4d8ff">Flat mode</strong> — the polygon is projected onto a tangent plane at the subsolar point, giving a more classical map-like appearance with a filled silhouette.</p>
+      <p>The country is scaled from its real Earth size using the ratio of Earth's radius (~6,371 km) to the Moon's radius (~1,737 km).</p>
+    </div>
+  </div>
+
+  <!-- Privacy Policy -->
+  <div class="modal-overlay" id="modal-privacy">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('privacy')">&#x2715;</button>
+      <h2>Privacy Policy</h2>
+      <p>This site does not collect or store any personal data directly. We use Google AdSense to display advertisements, which may collect data in accordance with Google's own privacy policy.</p>
+      <p>Google may use cookies and similar technologies to serve ads based on your prior visits to this or other websites. You can opt out of personalised advertising by visiting <a href="https://www.google.com/settings/ads" target="_blank" style="color:#7aadff">Google Ads Settings</a>.</p>
+      <p>No user accounts, no analytics beyond what ad partners collect, and no data sold to third parties by us.</p>
+    </div>
+  </div>
+
+  <!-- Cookie Policy -->
+  <div class="modal-overlay" id="modal-cookies">
+    <div class="modal">
+      <button class="modal-close" onclick="closeModal('cookies')">&#x2715;</button>
+      <h2>Cookie Policy</h2>
+      <p>This site itself does not set any first-party cookies. However, Google AdSense (our advertising partner) may set third-party cookies on your device to serve personalised or non-personalised ads.</p>
+      <p>These cookies help Google measure ad performance and deliver relevant advertisements. You can manage or disable cookies through your browser settings or via the <a href="https://www.google.com/settings/ads" target="_blank" style="color:#7aadff">Google Ads Settings</a> page.</p>
+      <p>By continuing to use this site, you acknowledge the use of these third-party cookies.</p>
+    </div>
+  </div>
+
+  <script>
+    function openModal(id) {
+      document.getElementById('modal-' + id).classList.add('open');
+    }
+    function closeModal(id) {
+      document.getElementById('modal-' + id).classList.remove('open');
+    }
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+      el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+    });
+  </script>
 
   <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
   <script type="importmap">
