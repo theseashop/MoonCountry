@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Countries</title>
+  <title>Countries on the Moon — Compare Country Sizes on the Lunar Surface</title>
+  <meta name="description" content="An interactive 3D visualisation that places any country's outline onto the surface of the Moon. Compare the true size of countries like Russia, USA, China, and more against the lunar landscape.">
+  <meta name="keywords" content="moon, countries, size comparison, 3D map, lunar surface, geography, interactive">
+  <meta property="og:title" content="Countries on the Moon">
+  <meta property="og:description" content="Compare the true size of any country on the surface of the Moon in 3D.">
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6985676295953319"
      crossorigin="anonymous"></script>
   <style>
@@ -86,6 +90,47 @@
       font-size: 11px;
       letter-spacing: 0.4px;
       color: rgba(100, 150, 220, 0.5);
+    }
+
+    #tooltip {
+      display: none;
+      position: fixed;
+      transform: translate(-50%, -50%);
+      background: rgba(8, 12, 30, 0.92);
+      border: 1px solid rgba(90, 130, 240, 0.22);
+      border-radius: 12px;
+      padding: 14px 18px;
+      pointer-events: none;
+      z-index: 20;
+      min-width: 190px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    #tt-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    #tt-flag { font-size: 22px; line-height: 1; }
+    #tt-name { font-size: 14px; font-weight: 600; color: #c4d8ff; letter-spacing: 0.3px; }
+    .tt-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 20px;
+      margin-top: 5px;
+    }
+    .tt-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(180,210,255,0.4); }
+    .tt-value { font-size: 12px; font-weight: 600; color: #c4d8ff; }
+
+    #page-content {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
     }
 
     #hint {
@@ -193,6 +238,44 @@
   </div>
   <div id="hint">Scroll · Zoom &nbsp;—&nbsp; Drag · Rotate</div>
 
+  <main id="page-content">
+    <h1>Countries on the Moon</h1>
+    <p>
+      Explore how big countries really are by placing them on the surface of the Moon.
+      Select any country from the list to see its true outline projected onto the lunar landscape in 3D.
+    </p>
+    <h2>How big is Russia on the Moon?</h2>
+    <p>Russia, the largest country on Earth at over 17 million km², would cover roughly a quarter of the Moon's visible surface. Use the interactive globe to see exactly how it compares.</p>
+    <h2>Compare country sizes in Flat or Curved mode</h2>
+    <p>
+      Switch between <strong>Flat</strong> mode — which shows the country as a filled polygon projected onto a tangent plane —
+      and <strong>Curved</strong> mode, which wraps the border directly onto the Moon's surface using spherical geometry,
+      giving the most accurate size comparison for large countries like Canada, the USA, China, and Brazil.
+    </p>
+    <h2>About the Moon</h2>
+    <p>
+      The Moon has a radius of approximately 1,737 km, compared to Earth's 6,371 km.
+      This means the Moon's surface area is about 13.5 times smaller than Earth's.
+      Countries are scaled by the ratio of these radii (~3.67×) so their angular extent on the Moon
+      matches their real angular extent on Earth.
+    </p>
+  </main>
+
+  <div id="tooltip">
+    <div id="tt-header">
+      <span id="tt-flag"></span>
+      <span id="tt-name"></span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">Area</span>
+      <span class="tt-value" id="tt-area"></span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">Population</span>
+      <span class="tt-value" id="tt-pop"></span>
+    </div>
+  </div>
+
   <div id="footer">
     <a onclick="openModal('about')">About</a>
     <span>·</span>
@@ -299,7 +382,7 @@
     controls.minDistance      = 1.15;
     controls.maxDistance      = 20;
     controls.autoRotate       = true;
-    controls.autoRotateSpeed  = 0.1;
+    controls.autoRotateSpeed  = 0.6;
     controls.minPolarAngle    = 0.1;
     controls.maxPolarAngle    = Math.PI - 0.1;
     renderer.domElement.addEventListener('pointerdown', () => {
@@ -621,7 +704,25 @@
       fill.quaternion.copy(quat);
       fill.position.copy(ll2v(placeLat, placeLon, r));
       fill.castShadow = true;
+      fill.userData.isHitMesh = true;
       outlineGroup.add(fill);
+    }
+
+    // Invisible hit mesh for 3D mode (no fill, but needed for raycasting)
+    const hitMat = new THREE.MeshBasicMaterial({
+      transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false,
+    });
+    function addHitMesh(rings, centLon, centLat, placeLon, placeLat, r) {
+      const uvs   = rings.map(ring => ringToUV(ring, centLon, centLat, r));
+      const shape = new THREE.Shape(uvs[0]);
+      uvs.slice(1).forEach(uv => shape.holes.push(new THREE.Path(uv)));
+      const geo  = new THREE.ShapeGeometry(shape);
+      const quat = tangentQuaternion(placeLat, placeLon);
+      const mesh = new THREE.Mesh(geo, hitMat);
+      mesh.quaternion.copy(quat);
+      mesh.position.copy(ll2v(placeLat, placeLon, r));
+      mesh.userData.isHitMesh = true;
+      outlineGroup.add(mesh);
     }
 
     function drawCountry2d(feature) {
@@ -763,14 +864,21 @@
           addRing3d(ring, R_LINE_3D, lineMat3d, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
           addRing3d(ring, R_GLOW_3D, glowMat3d, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
         });
+        addHitMesh(poly, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat, R_LINE_3D);
       };
       if (type === 'Polygon')      processPolygon(coordinates);
       if (type === 'MultiPolygon') coordinates.forEach(processPolygon);
     }
 
     // ── Unified entry point ───────────────────────────────────────────────────
+    let tooltipAnchor  = null; // world-space position of the polygon centre
+    let tooltipFeature = null;
+
     function drawCountry(feature) {
       currentFeature = feature;
+      const { lat, lon } = sunSubsolarPoint();
+      tooltipAnchor = ll2v(lat, lon, 1.0);
+      tooltipFeature = null; // force tooltip content refresh
       if (mode === '2d') drawCountry2d(feature);
       else               drawCountry3d(feature);
     }
@@ -818,6 +926,85 @@
         sel.innerHTML = '<option value="">Error — check console</option>';
       });
 
+    // ── Tooltip ───────────────────────────────────────────────────────────────
+    const raycaster = new THREE.Raycaster();
+    const mouse     = new THREE.Vector2();
+    const ttEl      = document.getElementById('tooltip');
+
+    function flagEmoji(iso2) {
+      if (!iso2 || iso2.length !== 2 || iso2 === '-1') return '';
+      return [...iso2.toUpperCase()].map(c =>
+        String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)
+      ).join('');
+    }
+
+    const countryDataCache = {};
+
+    async function fetchCountryData(iso2) {
+      if (!iso2 || iso2 === '-99' || iso2 === '-1') return null;
+      if (countryDataCache[iso2]) return countryDataCache[iso2];
+      try {
+        const res  = await fetch(`https://restcountries.com/v3.1/alpha/${iso2}?fields=area,population`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        countryDataCache[iso2] = data;
+        return data;
+      } catch { return null; }
+    }
+
+    function fmtPop(n) {
+      if (!n || n <= 0) return '—';
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (n >= 1e3) return Math.round(n / 1e3) + 'K';
+      return n.toLocaleString();
+    }
+
+    function showTooltip(e) {
+      const p = currentFeature.properties;
+
+      if (currentFeature !== tooltipFeature) {
+        tooltipFeature = currentFeature;
+        const name = p.NAME || p.ADMIN || '?';
+        const flag = flagEmoji(p.ISO_A2);
+        document.getElementById('tt-flag').textContent = flag;
+        document.getElementById('tt-name').textContent = name;
+        document.getElementById('tt-area').textContent = '…';
+        document.getElementById('tt-pop').textContent  = '…';
+
+        fetchCountryData(p.ISO_A2).then(data => {
+          if (currentFeature !== tooltipFeature) return; // stale
+          if (data) {
+            document.getElementById('tt-area').textContent = data.area ? Math.round(data.area).toLocaleString() + ' km²' : '—';
+            document.getElementById('tt-pop').textContent  = fmtPop(data.population);
+          } else {
+            document.getElementById('tt-area').textContent = '—';
+            document.getElementById('tt-pop').textContent  = fmtPop(p.POP_EST);
+          }
+        });
+      }
+
+      ttEl.style.display = 'block';
+    }
+
+    renderer.domElement.addEventListener('mousemove', e => {
+      if (!currentFeature) { ttEl.style.display = 'none'; return; }
+      mouse.set(
+        (e.clientX / innerWidth)  *  2 - 1,
+        (e.clientY / innerHeight) * -2 + 1
+      );
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(
+        outlineGroup.children.filter(c => c.userData.isHitMesh)
+      );
+      if (hits.length > 0) showTooltip(e);
+      else ttEl.style.display = 'none';
+    });
+
+    renderer.domElement.addEventListener('mouseleave', () => {
+      ttEl.style.display = 'none';
+    });
+
     // ── Resize ────────────────────────────────────────────────────────────────
     window.addEventListener('resize', () => {
       camera.aspect = innerWidth / innerHeight;
@@ -850,6 +1037,11 @@
       lineMat2d.opacity = osc;
       lineMat3d.opacity = osc;
       renderer.render(scene, camera);
+      if (tooltipAnchor && ttEl.style.display === 'block') {
+        const p = tooltipAnchor.clone().project(camera);
+        ttEl.style.left = ((p.x *  0.5 + 0.5) * innerWidth)  + 'px';
+        ttEl.style.top  = ((p.y * -0.5 + 0.5) * innerHeight) + 'px';
+      }
     })();
   </script>
 </body>
