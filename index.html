@@ -124,14 +124,40 @@
     .tt-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(180,210,255,0.4); }
     .tt-value { font-size: 12px; font-weight: 600; color: #c4d8ff; }
 
-    #page-content {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip: rect(0,0,0,0);
-      white-space: nowrap;
+    #info-panel {
+      position: fixed;
+      top: 50%;
+      right: 24px;
+      transform: translateY(-50%);
+      width: 220px;
+      background: rgba(4, 6, 18, 0.82);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(90, 130, 240, 0.22);
+      border-radius: 12px;
+      padding: 20px 18px;
+      z-index: 10;
+      color: rgba(180, 210, 255, 0.6);
+      font-size: 12px;
+      line-height: 1.7;
     }
+    #info-panel h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #c4d8ff;
+      margin-bottom: 10px;
+    }
+    #info-panel p { margin-bottom: 10px; }
+    #info-panel .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 11px;
+    }
+    #info-panel .info-label { color: rgba(180,210,255,0.4); text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
+    #info-panel .info-value { color: #c4d8ff; font-weight: 600; }
 
     #hint {
       position: fixed;
@@ -238,28 +264,16 @@
   </div>
   <div id="hint">Scroll · Zoom &nbsp;—&nbsp; Drag · Rotate</div>
 
-  <main id="page-content">
-    <h1>Countries on the Moon</h1>
-    <p>
-      Explore how big countries really are by placing them on the surface of the Moon.
-      Select any country from the list to see its true outline projected onto the lunar landscape in 3D.
-    </p>
-    <h2>How big is Russia on the Moon?</h2>
-    <p>Russia, the largest country on Earth at over 17 million km², would cover roughly a quarter of the Moon's visible surface. Use the interactive globe to see exactly how it compares.</p>
-    <h2>Compare country sizes in Flat or Curved mode</h2>
-    <p>
-      Switch between <strong>Flat</strong> mode — which shows the country as a filled polygon projected onto a tangent plane —
-      and <strong>Curved</strong> mode, which wraps the border directly onto the Moon's surface using spherical geometry,
-      giving the most accurate size comparison for large countries like Canada, the USA, China, and Brazil.
-    </p>
-    <h2>About the Moon</h2>
-    <p>
-      The Moon has a radius of approximately 1,737 km, compared to Earth's 6,371 km.
-      This means the Moon's surface area is about 13.5 times smaller than Earth's.
-      Countries are scaled by the ratio of these radii (~3.67×) so their angular extent on the Moon
-      matches their real angular extent on Earth.
-    </p>
-  </main>
+  <aside id="info-panel">
+    <h2>About</h2>
+    <p>Select a country to see how it compares to the surface of the Moon or Mars.</p>
+    <p>Use <strong style="color:#c4d8ff">Curved</strong> mode to wrap the border onto the sphere, or <strong style="color:#c4d8ff">Flat</strong> mode for a filled silhouette.</p>
+    <div id="info-country" style="display:none; margin-top:14px; border-top:1px solid rgba(90,130,240,0.18); padding-top:14px;">
+      <div class="info-row"><span class="info-label">Country</span><span class="info-value" id="info-name"></span></div>
+      <div class="info-row"><span class="info-label">Area</span><span class="info-value" id="info-area"></span></div>
+      <div class="info-row"><span class="info-label">Population</span><span class="info-value" id="info-pop"></span></div>
+    </div>
+  </aside>
 
   <div id="tooltip">
     <div id="tt-header">
@@ -874,11 +888,25 @@
     let tooltipAnchor  = null; // world-space position of the polygon centre
     let tooltipFeature = null;
 
+    function updateInfoPanel(feature) {
+      const p = feature.properties;
+      document.getElementById('info-name').textContent = p.NAME || p.ADMIN || '?';
+      document.getElementById('info-area').textContent = '…';
+      document.getElementById('info-pop').textContent  = '…';
+      document.getElementById('info-country').style.display = 'block';
+      fetchCountryData(p.ISO_A2).then(data => {
+        if (currentFeature !== feature) return;
+        document.getElementById('info-area').textContent = data?.area ? Math.round(data.area).toLocaleString() + ' km²' : '—';
+        document.getElementById('info-pop').textContent  = data?.population ? fmtPop(data.population) : '—';
+      });
+    }
+
     function drawCountry(feature) {
       currentFeature = feature;
       const { lat, lon } = sunSubsolarPoint();
       tooltipAnchor = ll2v(lat, lon, 1.0);
       tooltipFeature = null; // force tooltip content refresh
+      updateInfoPanel(feature);
       if (mode === '2d') drawCountry2d(feature);
       else               drawCountry3d(feature);
     }
