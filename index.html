@@ -30,6 +30,39 @@
       margin-bottom: 12px;
     }
 
+    #bodyToggle {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 6px;
+    }
+    #bodyToggle button {
+      flex: 1;
+      appearance: none;
+      background: rgba(4, 6, 18, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      color: rgba(180, 210, 255, 0.45);
+      border: 1px solid rgba(90, 130, 240, 0.22);
+      padding: 8px 0;
+      font-size: 10px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 117px;
+      outline: none;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    #bodyToggle button:hover {
+      border-color: rgba(90, 130, 240, 0.5);
+      color: rgba(180, 210, 255, 0.7);
+    }
+    #bodyToggle button.active {
+      background: rgba(90, 130, 240, 0.18);
+      border-color: rgba(90, 130, 240, 0.65);
+      color: #c4d8ff;
+    }
+
     #modeToggle {
       display: flex;
       gap: 5px;
@@ -253,6 +286,10 @@
 <body>
   <div id="ui">
     <h1>Countries</h1>
+    <div id="bodyToggle">
+      <button id="btnMoon" class="active">Moon</button>
+      <button id="btnMars">Mars</button>
+    </div>
     <div id="modeToggle">
       <button id="btn3d" class="active">Curved</button>
       <button id="btn2d">Flat</button>
@@ -424,29 +461,57 @@
       })));
     }
 
-    // ── Moon textures ─────────────────────────────────────────────────────────
-    setStatus('Loading moon textures…');
-    const loader   = new THREE.TextureLoader();
-    const colorMap = loader.load('color_4k.jpg',
-      () => setStatus('Fetching country data…'),
-      undefined,
-      ()  => setStatus('color_4k.jpg not found — serve via local server')
-    );
-    const dispMap   = loader.load('ldem_disp.png');
-    const normalMap = loader.load('moon_normals.png');
+    // ── Celestial body config ─────────────────────────────────────────────────
+    const BODIES = {
+      moon: {
+        scale:       6371 / 1737,
+        colorMap:    'color_4k.jpg',
+        dispMap:     'ldem_disp.png',
+        dispScale:   0.01,
+        normalMap:   'moon_normals.png',
+        normalScale: new THREE.Vector2(0.5, 0.9),
+      },
+      mars: {
+        scale:       6371 / 3389.5,
+        colorMap:    'mars.jpg',
+        dispMap:     null,
+        dispScale:   0,
+        normalMap:   'mars_normal.jpg',
+        normalScale: new THREE.Vector2(0.8, 0.8),
+      },
+    };
 
-    const moon = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 256, 256),
-      new THREE.MeshPhongMaterial({
-        map:               colorMap,
-        color:             0xffffff,
-        displacementMap:   dispMap,
-        displacementScale: 0.01,
-        normalMap:         normalMap,
-        normalScale:       new THREE.Vector2(0.5, 0.9),
-        shininess:         0
-      })
-    );
+    let currentBody      = 'moon';
+    let EARTH_BODY_SCALE = BODIES.moon.scale;
+
+    // ── Globe textures ────────────────────────────────────────────────────────
+    setStatus('Loading textures…');
+    const loader    = new THREE.TextureLoader();
+    const texCache  = {};
+
+    function loadTex(path) {
+      if (!path) return null;
+      if (!texCache[path]) texCache[path] = loader.load(path);
+      return texCache[path];
+    }
+
+    const globeMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 0 });
+
+    function applyBodyTextures(bodyKey) {
+      const cfg = BODIES[bodyKey];
+      globeMat.map              = loadTex(cfg.colorMap);
+      globeMat.displacementMap  = loadTex(cfg.dispMap);
+      globeMat.displacementScale = cfg.dispScale;
+      globeMat.normalMap        = loadTex(cfg.normalMap);
+      globeMat.normalScale      = cfg.normalScale;
+      globeMat.needsUpdate      = true;
+    }
+
+    applyBodyTextures('moon');
+    loader.load('color_4k.jpg', () => setStatus('Fetching country data…'),
+      undefined, () => setStatus('color_4k.jpg not found — serve via local server'));
+
+    const moon = new THREE.Mesh(new THREE.SphereGeometry(1, 256, 256), globeMat);
     moon.receiveShadow = true;
     scene.add(moon);
 
@@ -476,8 +541,19 @@
     let mode           = '3d';
     let currentFeature = null;
 
+    document.getElementById('btnMoon').addEventListener('click', () => setBody('moon'));
+    document.getElementById('btnMars').addEventListener('click', () => setBody('mars'));
     document.getElementById('btn2d').addEventListener('click', () => setMode('2d'));
     document.getElementById('btn3d').addEventListener('click', () => setMode('3d'));
+
+    function setBody(b) {
+      currentBody = b;
+      EARTH_BODY_SCALE = BODIES[b].scale;
+      document.getElementById('btnMoon').classList.toggle('active', b === 'moon');
+      document.getElementById('btnMars').classList.toggle('active', b === 'mars');
+      applyBodyTextures(b);
+      if (currentFeature) drawCountry(currentFeature);
+    }
 
     function setMode(m) {
       mode = m;
@@ -501,8 +577,6 @@
       for (const c of outlineGroup.children) c.geometry.dispose();
       outlineGroup.clear();
     }
-
-    const EARTH_MOON_SCALE = 6371 / 1737;
 
     function wrapDeg(d) {
       while (d >  180) d -= 360;
@@ -598,7 +672,7 @@
       flyTarget = ll2v(lat, lon, 1).normalize();
       controls.autoRotate = false;
       if (maxFlatRadius !== undefined) {
-        const alpha   = Math.min(Math.PI / 2, maxFlatRadius * EARTH_MOON_SCALE);
+        const alpha   = Math.min(Math.PI / 2, maxFlatRadius * EARTH_BODY_SCALE);
         const halfFov = (45 / 2) * Math.PI / 180;
         const needed  = Math.sin(alpha) / Math.tan(halfFov) * 1.3 + Math.cos(alpha);
         flyDistance   = Math.min(Math.max(needed, 2.0), controls.maxDistance);
@@ -671,7 +745,7 @@
     }
 
     function ringToUV(ring, centLon, centLat, r) {
-      const k = EARTH_MOON_SCALE * r;
+      const k = EARTH_BODY_SCALE * r;
       return ringToFlat(ring, centLon, centLat).map(([u, v]) =>
         new THREE.Vector2(u * k, v * k)
       );
@@ -679,7 +753,7 @@
 
     function addRing2d(ring, r, mat, centLon, centLat, placeLon, placeLat) {
       if (ring.length < 2) return;
-      const k    = EARTH_MOON_SCALE * r;
+      const k    = EARTH_BODY_SCALE * r;
       const quat = tangentQuaternion(placeLat, placeLon);
       const orig = ll2v(placeLat, placeLon, r);
       const pts  = ringToFlat(ring, centLon, centLat).map(([u, v]) =>
@@ -807,7 +881,7 @@
         if (angle < 1e-10) return pDir.clone().multiplyScalar(r);
         const axis        = new THREE.Vector3().crossVectors(cDir, vDir).normalize();
         const rebasedAxis = axis.clone().applyQuaternion(qRebase);
-        const qScaled     = new THREE.Quaternion().setFromAxisAngle(rebasedAxis, angle * EARTH_MOON_SCALE);
+        const qScaled     = new THREE.Quaternion().setFromAxisAngle(rebasedAxis, angle * EARTH_BODY_SCALE);
         return pDir.clone().applyQuaternion(qScaled).multiplyScalar(r);
       });
     }
