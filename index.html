@@ -192,6 +192,25 @@
     #info-panel .info-label { color: rgba(180,210,255,0.4); text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
     #info-panel .info-value { color: #c4d8ff; font-weight: 600; }
 
+    @media (max-width: 600px) {
+      #info-panel {
+        top: auto;
+        right: 0;
+        bottom: 36px;
+        left: 0;
+        transform: none;
+        width: 100%;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        border-bottom: none;
+        padding: 12px 18px;
+      }
+      #info-panel h2,
+      #info-panel > p { display: none; }
+      #info-country { margin-top: 0 !important; border-top: none !important; padding-top: 0 !important; }
+    }
+
     #hint {
       position: fixed;
       bottom: 48px;
