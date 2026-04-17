@@ -345,6 +345,8 @@
     <div id="bodyToggle">
       <button id="btnMoon" class="active">Moon</button>
       <button id="btnMars">Mars</button>
+      <button id="btnMercury">Mercury</button>
+      <button id="btnVenus">Venus</button>
     </div>
     <div id="modeToggle">
       <button id="btn3d" class="active">Curved</button>
@@ -361,7 +363,7 @@
 
   <aside id="info-panel">
     <h2>About</h2>
-    <p>Select a country to see how it compares to the surface of the Moon or Mars.</p>
+    <p>Select a country to see how it compares to the surface of the Moon, Mars, Mercury, or Venus.</p>
     <p>Use <strong style="color:#c4d8ff">Curved</strong> mode to wrap the border onto the sphere, or <strong style="color:#c4d8ff">Flat</strong> mode for a filled silhouette.</p>
     <div id="info-country" style="display:none; margin-top:14px; border-top:1px solid rgba(90,130,240,0.18); padding-top:14px;">
       <div class="info-row"><span class="info-label">Country</span><span class="info-value" id="info-name"></span></div>
@@ -530,6 +532,7 @@
         dispScale:   0.01,
         normalMap:   'moon_normals.png',
         normalScale: new THREE.Vector2(0.5, 0.9),
+        texOffset:   0,
       },
       mars: {
         scale:       6371 / 3389.5,
@@ -538,6 +541,25 @@
         dispScale:   0,
         normalMap:   'mars_normal.jpg',
         normalScale: new THREE.Vector2(0.8, 0.8),
+        texOffset:   0,
+      },
+      mercury: {
+        scale:       6371 / 2439.7,
+        colorMap:    'mercury.jpg',
+        dispMap:     null,
+        dispScale:   0,
+        normalMap:   null,
+        normalScale: new THREE.Vector2(0.5, 0.5),
+        texOffset:   0,
+      },
+      venus: {
+        scale:       6371 / 6051.8,
+        colorMap:    'venus.jpg',
+        dispMap:     null,
+        dispScale:   0,
+        normalMap:   null,
+        normalScale: new THREE.Vector2(0, 0),
+        texOffset:   0,
       },
     };
 
@@ -564,6 +586,9 @@
       globeMat.displacementScale = cfg.dispScale;
       globeMat.normalMap        = loadTex(cfg.normalMap);
       globeMat.normalScale      = cfg.normalScale;
+      if (globeMat.map)            globeMat.map.offset.x            = cfg.texOffset;
+      if (globeMat.displacementMap) globeMat.displacementMap.offset.x = cfg.texOffset;
+      if (globeMat.normalMap)      globeMat.normalMap.offset.x      = cfg.texOffset;
       globeMat.needsUpdate      = true;
     }
 
@@ -601,16 +626,20 @@
     let mode           = '3d';
     let currentFeature = null;
 
-    document.getElementById('btnMoon').addEventListener('click', () => setBody('moon'));
-    document.getElementById('btnMars').addEventListener('click', () => setBody('mars'));
+    document.getElementById('btnMoon').addEventListener('click',    () => setBody('moon'));
+    document.getElementById('btnMars').addEventListener('click',    () => setBody('mars'));
+    document.getElementById('btnMercury').addEventListener('click', () => setBody('mercury'));
+    document.getElementById('btnVenus').addEventListener('click',   () => setBody('venus'));
     document.getElementById('btn2d').addEventListener('click', () => setMode('2d'));
     document.getElementById('btn3d').addEventListener('click', () => setMode('3d'));
 
     function setBody(b) {
       currentBody = b;
       EARTH_BODY_SCALE = BODIES[b].scale;
-      document.getElementById('btnMoon').classList.toggle('active', b === 'moon');
-      document.getElementById('btnMars').classList.toggle('active', b === 'mars');
+      ['moon','mars','mercury','venus'].forEach(id =>
+        document.getElementById('btn' + id[0].toUpperCase() + id.slice(1))
+          .classList.toggle('active', b === id)
+      );
       applyBodyTextures(b);
       if (currentFeature) drawCountry(currentFeature);
     }
