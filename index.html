@@ -534,6 +534,13 @@
     controls.dampingFactor    = 0.07;
     controls.minDistance      = 1.15;
     controls.maxDistance      = 20;
+
+    if (innerWidth <= 600) {
+      // Zoom out and shift target down so globe sits above the bottom bar
+      camera.position.set(0, 0, -7);
+      controls.target.set(0, -0.5, 0);
+      controls.update();
+    }
     controls.autoRotate       = true;
     controls.autoRotateSpeed  = 0.6;
     controls.minPolarAngle    = 0.1;
