@@ -196,21 +196,25 @@
     .tt-value { font-size: 12px; font-weight: 600; color: #c4d8ff; }
 
     #info-panel {
-      position: fixed;
-      top: 50%;
-      right: 24px;
-      transform: translateY(-50%);
-      width: 220px;
-      background: rgba(4, 6, 18, 0.82);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid rgba(90, 130, 240, 0.22);
-      border-radius: 12px;
-      padding: 20px 18px;
-      z-index: 10;
       color: rgba(180, 210, 255, 0.6);
       font-size: 12px;
       line-height: 1.7;
+    }
+    @media (min-width: 769px) {
+      #info-panel {
+        position: fixed;
+        top: 50%;
+        right: 24px;
+        transform: translateY(-50%);
+        width: 220px;
+        background: rgba(4, 6, 18, 0.82);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(90, 130, 240, 0.22);
+        border-radius: 12px;
+        padding: 20px 18px;
+        z-index: 10;
+      }
     }
     #info-panel h2 {
       font-size: 11px;
@@ -230,23 +234,64 @@
     #info-panel .info-label { color: rgba(180,210,255,0.4); text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
     #info-panel .info-value { color: #c4d8ff; font-weight: 600; }
 
-    @media (max-width: 600px) {
+    @media (max-width: 768px) {
+      #ui {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 12px 16px 14px;
+        background: rgba(4, 6, 18, 0.92);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-top: 1px solid rgba(90, 130, 240, 0.2);
+        border-radius: 16px 16px 0 0;
+      }
+      h1 { display: none; }
+      #bodyToggle {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+        margin-bottom: 8px;
+      }
+      #bodyToggle button {
+        width: auto;
+        padding: 7px 0;
+      }
+      #searchWrap { width: 100%; }
+      #selectedTags { max-width: 100%; }
+      #status { font-size: 10px; }
+      #searchDropdown { max-height: 160px; bottom: calc(100% + 4px); top: auto; }
+      #tooltip { display: none !important; }
+
       #info-panel {
         top: auto;
         right: 0;
-        bottom: 36px;
+        bottom: auto;
         left: 0;
         transform: none;
         width: 100%;
         border-radius: 0;
-        border-left: none;
-        border-right: none;
-        border-bottom: none;
-        padding: 12px 18px;
+        border: none;
+        border-top: 1px solid rgba(90, 130, 240, 0.15);
+        padding: 10px 16px;
+        background: rgba(4, 6, 18, 0.0);
+        backdrop-filter: none;
+        position: relative;
       }
       #info-panel h2,
       #info-panel > p { display: none; }
-      #info-country { margin-top: 0 !important; border-top: none !important; padding-top: 0 !important; }
+      #info-country {
+        margin-top: 0 !important;
+        border-top: none !important;
+        padding-top: 6px !important;
+        display: flex !important;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+      }
+      #info-country .info-row { margin-top: 0; }
+      #hint { display: none; }
+      #footer { display: none; }
     }
 
     #hint {
@@ -356,19 +401,18 @@
     </div>
     <div id="selectedTags"></div>
     <div id="status">Initialising…</div>
+    <aside id="info-panel">
+      <h2>About</h2>
+      <p>Select a country to see how it compares to the surface of the Moon, Mars, Mercury, or Venus.</p>
+      <p>The border is wrapped directly onto the sphere surface using spherical rotation projection.</p>
+      <div id="info-country" style="display:none; margin-top:14px; border-top:1px solid rgba(90,130,240,0.18); padding-top:14px;">
+        <div class="info-row"><span class="info-label">Country</span><span class="info-value" id="info-name"></span></div>
+        <div class="info-row"><span class="info-label">Area</span><span class="info-value" id="info-area"></span></div>
+        <div class="info-row"><span class="info-label">Population</span><span class="info-value" id="info-pop"></span></div>
+      </div>
+    </aside>
   </div>
   <div id="hint">Scroll · Zoom &nbsp;—&nbsp; Drag · Rotate</div>
-
-  <aside id="info-panel">
-    <h2>About</h2>
-    <p>Select a country to see how it compares to the surface of the Moon, Mars, Mercury, or Venus.</p>
-    <p>The border is wrapped directly onto the sphere surface using spherical rotation projection.</p>
-    <div id="info-country" style="display:none; margin-top:14px; border-top:1px solid rgba(90,130,240,0.18); padding-top:14px;">
-      <div class="info-row"><span class="info-label">Country</span><span class="info-value" id="info-name"></span></div>
-      <div class="info-row"><span class="info-label">Area</span><span class="info-value" id="info-area"></span></div>
-      <div class="info-row"><span class="info-label">Population</span><span class="info-value" id="info-pop"></span></div>
-    </div>
-  </aside>
 
   <div id="tooltip">
     <div id="tt-header">
@@ -491,6 +535,13 @@
     controls.dampingFactor    = 0.07;
     controls.minDistance      = 1.15;
     controls.maxDistance      = 20;
+
+    if (innerWidth <= 600) {
+      // Zoom out and shift target down so globe sits above the bottom bar
+      camera.position.set(0, 0, -7);
+      controls.target.set(0, -0.5, 0);
+      controls.update();
+    }
     controls.autoRotate       = true;
     controls.autoRotateSpeed  = 0.6;
     controls.minPolarAngle    = 0.1;
@@ -1200,6 +1251,7 @@
     let isDragging      = false;
     let draggingIndex   = -1;
     let dragAnimFrame   = null;
+    let dragOffsetQuat  = new THREE.Quaternion(); // click-point → placement-center offset
     const globeRaycaster = new THREE.Raycaster();
 
     renderer.domElement.addEventListener('pointerdown', e => {
@@ -1215,6 +1267,13 @@
       if (hits.length === 0) return;
       draggingIndex = hits[0].object.userData.countryIndex ?? -1;
       if (draggingIndex < 0) return;
+
+      // Record offset: rotation from click point → current placement center
+      const clickDir     = hits[0].point.clone().normalize();
+      const { lat, lon } = selectedCountries[draggingIndex].placement ?? sunSubsolarPoint();
+      const centerDir    = ll2v(lat, lon, 1).normalize();
+      dragOffsetQuat.setFromUnitVectors(clickDir, centerDir);
+
       isDragging = true;
       controls.enabled = false;
       renderer.domElement.setPointerCapture(e.pointerId);
@@ -1230,7 +1289,9 @@
       globeRaycaster.setFromCamera(m, camera);
       const hits = globeRaycaster.intersectObject(moon);
       if (hits.length === 0) return;
-      selectedCountries[draggingIndex].placement = v2ll(hits[0].point);
+      // Apply offset so the grabbed point stays under the cursor
+      const cursorDir    = hits[0].point.clone().normalize().applyQuaternion(dragOffsetQuat);
+      selectedCountries[draggingIndex].placement = v2ll(cursorDir);
       if (dragAnimFrame) cancelAnimationFrame(dragAnimFrame);
       dragAnimFrame = requestAnimationFrame(() => {
         dragAnimFrame = null;
