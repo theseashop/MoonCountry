@@ -37,20 +37,18 @@
       margin-bottom: 6px;
     }
     #bodyToggle button {
-      flex: 1;
       appearance: none;
       background: rgba(4, 6, 18, 0.88);
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
       color: rgba(180, 210, 255, 0.45);
       border: 1px solid rgba(90, 130, 240, 0.22);
-      padding: 8px 0;
+      padding: 8px 14px;
       font-size: 10px;
       letter-spacing: 2.5px;
       text-transform: uppercase;
       border-radius: 8px;
       cursor: pointer;
-      width: 117px;
       outline: none;
       transition: background 0.2s, border-color 0.2s, color 0.2s;
     }
@@ -267,7 +265,7 @@
       h1 { display: none; }
       #bodyToggle {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr 1fr 1fr;
         gap: 5px;
         margin-bottom: 8px;
       }
@@ -413,6 +411,7 @@
       <button id="btnMars">Mars</button>
       <button id="btnMercury">Mercury</button>
       <button id="btnVenus">Venus</button>
+      <button id="btnLight" title="Toggle full illumination">☀ Full light</button>
     </div>
     <div id="searchWrap">
       <span id="searchIcon">&#x2315;</span>
@@ -556,6 +555,7 @@
     controls.dampingFactor    = 0.07;
     controls.minDistance      = 1.15;
     controls.maxDistance      = 20;
+    controls.zoomSpeed        = 0.2;
 
     if (innerWidth <= 600) {
       // Zoom out and shift target down so globe sits above the bottom bar
@@ -703,6 +703,18 @@
     light.shadow.camera.left = light.shadow.camera.bottom = -5;
     light.shadow.camera.right = light.shadow.camera.top = 5;
     scene.add(light);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0);
+    scene.add(ambientLight);
+
+    let fullIllumination = false;
+    function setIllumination(full) {
+      fullIllumination = full;
+      sun.intensity     = full ? 0 : 1.4;
+      light.intensity   = full ? 0 : 0.5;
+      ambientLight.intensity = full ? 1.1 : 0;
+      document.getElementById('btnLight').classList.toggle('active', full);
+    }
+    document.getElementById('btnLight').addEventListener('click', () => setIllumination(!fullIllumination));
 
     // ── Outline group ─────────────────────────────────────────────────────────
     const outlineGroup = new THREE.Group();
