@@ -1251,6 +1251,7 @@
     let isDragging      = false;
     let draggingIndex   = -1;
     let dragAnimFrame   = null;
+    let dragOffsetQuat  = new THREE.Quaternion(); // click-point → placement-center offset
     const globeRaycaster = new THREE.Raycaster();
 
     renderer.domElement.addEventListener('pointerdown', e => {
@@ -1266,6 +1267,13 @@
       if (hits.length === 0) return;
       draggingIndex = hits[0].object.userData.countryIndex ?? -1;
       if (draggingIndex < 0) return;
+
+      // Record offset: rotation from click point → current placement center
+      const clickDir     = hits[0].point.clone().normalize();
+      const { lat, lon } = selectedCountries[draggingIndex].placement ?? sunSubsolarPoint();
+      const centerDir    = ll2v(lat, lon, 1).normalize();
+      dragOffsetQuat.setFromUnitVectors(clickDir, centerDir);
+
       isDragging = true;
       controls.enabled = false;
       renderer.domElement.setPointerCapture(e.pointerId);
@@ -1281,7 +1289,9 @@
       globeRaycaster.setFromCamera(m, camera);
       const hits = globeRaycaster.intersectObject(moon);
       if (hits.length === 0) return;
-      selectedCountries[draggingIndex].placement = v2ll(hits[0].point);
+      // Apply offset so the grabbed point stays under the cursor
+      const cursorDir    = hits[0].point.clone().normalize().applyQuaternion(dragOffsetQuat);
+      selectedCountries[draggingIndex].placement = v2ll(cursorDir);
       if (dragAnimFrame) cancelAnimationFrame(dragAnimFrame);
       dragAnimFrame = requestAnimationFrame(() => {
         dragAnimFrame = null;
