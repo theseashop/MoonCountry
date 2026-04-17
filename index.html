@@ -163,6 +163,23 @@
       color: rgba(100, 150, 220, 0.5);
     }
 
+    #tex-spinner {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(90, 130, 240, 0.15);
+      border-top-color: rgba(90, 130, 240, 0.6);
+      animation: spin 0.8s linear infinite;
+      pointer-events: none;
+      z-index: 5;
+    }
+    @keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+
     #tooltip {
       display: none;
       position: fixed;
@@ -416,6 +433,7 @@
     </aside>
   </div>
   <div id="hint">Scroll · Zoom &nbsp;—&nbsp; Drag · Rotate</div>
+  <div id="tex-spinner"></div>
 
   <div id="tooltip">
     <div id="tt-header">
@@ -622,9 +640,25 @@
     const loader    = new THREE.TextureLoader();
     const texCache  = {};
 
-    function loadTex(path) {
+    const spinnerEl = document.getElementById('tex-spinner');
+    let spinnerTimer = null;
+
+    function showSpinner() {
+      clearTimeout(spinnerTimer);
+      spinnerEl.style.display = 'block';
+    }
+    function hideSpinner() {
+      spinnerTimer = setTimeout(() => { spinnerEl.style.display = 'none'; }, 120);
+    }
+
+    function loadTex(path, onLoad) {
       if (!path) return null;
-      if (!texCache[path]) texCache[path] = loader.load(path);
+      if (!texCache[path]) {
+        texCache[path] = loader.load(path, tex => { if (onLoad) onLoad(tex); });
+      } else if (onLoad) {
+        const tex = texCache[path];
+        tex.image?.complete ? onLoad(tex) : tex.addEventListener('update', () => onLoad(tex), { once: true });
+      }
       return texCache[path];
     }
 
@@ -632,7 +666,8 @@
 
     function applyBodyTextures(bodyKey) {
       const cfg = BODIES[bodyKey];
-      globeMat.map              = loadTex(cfg.colorMap);
+      showSpinner();
+      globeMat.map              = loadTex(cfg.colorMap, hideSpinner);
       globeMat.displacementMap  = loadTex(cfg.dispMap);
       globeMat.displacementScale = cfg.dispScale;
       globeMat.normalMap        = loadTex(cfg.normalMap);
