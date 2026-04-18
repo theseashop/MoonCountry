@@ -918,8 +918,14 @@
     const R_GLOW_3D = 1.013;
 
     const COUNTRY_COLORS = [
-      0xFF6622, 0x44CCFF, 0x66FF88, 0xFFCC00,
-      0xFF44AA, 0xAA88FF, 0x00FFCC, 0xFF8800,
+      0xCC1100, // deep red
+      0x0044BB, // strong blue
+      0x006622, // forest green
+      0x7700BB, // deep purple
+      0xBB5500, // burnt orange
+      0x005577, // dark teal
+      0xAA0044, // crimson
+      0x334488, // navy
     ];
 
     const countryMats = {}; // countryIndex → { line, glow }
@@ -928,16 +934,10 @@
       if (!countryMats[idx]) {
         const hex  = COUNTRY_COLORS[idx % COUNTRY_COLORS.length];
         const col  = new THREE.Color(hex);
-        const glow = col.clone().lerp(new THREE.Color(0xffffff), 0.35);
         countryMats[idx] = {
           line: new LineMaterial({
-            color: hex, linewidth: 2,
+            color: hex, linewidth: 0.6,
             transparent: true, opacity: 0.90,
-            resolution: new THREE.Vector2(innerWidth, innerHeight),
-          }),
-          glow: new LineMaterial({
-            color: glow.getHex(), linewidth: 5,
-            transparent: true, opacity: 0.14,
             resolution: new THREE.Vector2(innerWidth, innerHeight),
           }),
         };
@@ -1031,7 +1031,6 @@
         poly.forEach(ring => {
           const mats = getCountryMats(countryIndex);
           addRing3d(ring, R_LINE_3D, mats.line, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
-          addRing3d(ring, R_GLOW_3D, mats.glow, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat);
         });
         addHitMesh(poly, polyCentLon, polyCentLat, polyPlaceLon, polyPlaceLat, R_LINE_3D, countryIndex);
       };
@@ -1361,9 +1360,8 @@
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
-      Object.values(countryMats).forEach(({ line, glow }) => {
+      Object.values(countryMats).forEach(({ line }) => {
         line.resolution.set(innerWidth, innerHeight);
-        glow.resolution.set(innerWidth, innerHeight);
       });
     });
 
@@ -1386,10 +1384,13 @@
       }
       controls.update();
       const t   = clock.getElapsedTime();
-      const osc = 0.78 + 0.18 * Math.sin(t * 1.8);
-      Object.values(countryMats).forEach(({ line, glow }) => {
+      const osc = 0.92 + 0.08 * Math.sin(t * 1.8);
+      const camDist = camera.position.length();
+      // thick when close (zoomed in), thin when far (planet small)
+      const lineScale = Math.max(0.55, Math.min(1.0, 1.0 - (camDist - 1.1) / (3.5 - 1.1)));
+      Object.values(countryMats).forEach(({ line }) => {
         line.opacity = osc;
-        glow.opacity = 0.14 * (osc / 0.90);
+        line.linewidth = 1.4 * lineScale;
       });
       renderer.render(scene, camera);
       if (tooltipAnchor && ttEl.style.display === 'block') {
