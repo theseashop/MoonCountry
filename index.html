@@ -249,6 +249,10 @@
     #info-panel .info-label { color: rgba(180,210,255,0.4); text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
     #info-panel .info-value { color: #c4d8ff; font-weight: 600; }
 
+    #ui-toggle {
+      display: none;
+    }
+
     @media (max-width: 768px) {
       #ui {
         top: auto;
@@ -261,6 +265,34 @@
         -webkit-backdrop-filter: blur(16px);
         border-top: 1px solid rgba(90, 130, 240, 0.2);
         border-radius: 16px 16px 0 0;
+        transition: transform 0.3s ease;
+      }
+      #ui.collapsed {
+        transform: translateY(calc(100% - 36px));
+      }
+      #ui-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0 0 8px 0;
+        margin: -4px 0 4px 0;
+        color: rgba(180, 210, 255, 0.6);
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        line-height: 1;
+      }
+      #ui-toggle::before {
+        content: '';
+        display: block;
+        width: 28px;
+        height: 3px;
+        border-radius: 2px;
+        background: rgba(180, 210, 255, 0.25);
       }
       h1 { display: none; }
       #bodyToggle {
@@ -405,6 +437,7 @@
 </head>
 <body>
   <div id="ui">
+    <button id="ui-toggle" aria-label="Toggle menu"><span id="ui-toggle-label">▼ Hide</span></button>
     <h1>Countries</h1>
     <div id="bodyToggle">
       <button id="btnMoon" class="active">Moon</button>
@@ -721,6 +754,12 @@
     scene.add(outlineGroup);
 
     let currentFeature = null;
+
+    document.getElementById('ui-toggle').addEventListener('click', () => {
+      const ui = document.getElementById('ui');
+      const collapsed = ui.classList.toggle('collapsed');
+      document.getElementById('ui-toggle-label').textContent = collapsed ? '▲ Show' : '▼ Hide';
+    });
 
     document.getElementById('btnMoon').addEventListener('click',    () => setBody('moon'));
     document.getElementById('btnMars').addEventListener('click',    () => setBody('mars'));
