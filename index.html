@@ -297,7 +297,7 @@
       h1 { display: none; }
       #bodyToggle {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-columns: 1fr 1fr 1fr 1fr;
         gap: 5px;
         margin-bottom: 8px;
       }
@@ -444,6 +444,10 @@
       <button id="btnMars">Mars</button>
       <button id="btnMercury">Mercury</button>
       <button id="btnVenus">Venus</button>
+      <button id="btnJupiter">Jupiter</button>
+      <button id="btnSaturn">Saturn</button>
+      <button id="btnUranus">Uranus</button>
+      <button id="btnNeptune">Neptune</button>
       <button id="btnLight" title="Toggle full illumination">☀ Full light</button>
     </div>
     <div id="searchWrap">
@@ -588,7 +592,7 @@
     controls.dampingFactor    = 0.07;
     controls.minDistance      = 1.15;
     controls.maxDistance      = 20;
-    controls.zoomSpeed        = 0.2;
+    controls.zoomSpeed        = 0.15;
 
     if (innerWidth <= 600) {
       // Zoom out and shift target down so globe sits above the bottom bar
@@ -629,6 +633,7 @@
     const BODIES = {
       moon: {
         scale:       6371 / 1737,
+        fov:         45,
         colorMap:    'color_4k.jpg',
         dispMap:     'ldem_disp.png',
         dispScale:   0.01,
@@ -638,6 +643,7 @@
       },
       mars: {
         scale:       6371 / 3389.5,
+        fov:         45,
         colorMap:    'mars.jpg',
         dispMap:     null,
         dispScale:   0,
@@ -647,6 +653,7 @@
       },
       mercury: {
         scale:       6371 / 2439.7,
+        fov:         45,
         colorMap:    'mercury.jpg',
         dispMap:     null,
         dispScale:   0,
@@ -656,7 +663,48 @@
       },
       venus: {
         scale:       6371 / 6051.8,
+        fov:         45,
         colorMap:    'venus.jpg',
+        dispMap:     null,
+        dispScale:   0,
+        normalMap:   null,
+        normalScale: new THREE.Vector2(0, 0),
+        texOffset:   0,
+      },
+      jupiter: {
+        scale:       6371 / 71492,
+        fov:         20,
+        colorMap:    'jupiter.jpg',
+        dispMap:     null,
+        dispScale:   0,
+        normalMap:   null,
+        normalScale: new THREE.Vector2(0, 0),
+        texOffset:   0,
+      },
+      saturn: {
+        scale:       6371 / 58232,
+        fov:         20,
+        colorMap:    'saturn.jpg',
+        dispMap:     null,
+        dispScale:   0,
+        normalMap:   null,
+        normalScale: new THREE.Vector2(0, 0),
+        texOffset:   0,
+      },
+      uranus: {
+        scale:       6371 / 25362,
+        fov:         20,
+        colorMap:    'uranus.jpg',
+        dispMap:     null,
+        dispScale:   0,
+        normalMap:   null,
+        normalScale: new THREE.Vector2(0, 0),
+        texOffset:   0,
+      },
+      neptune: {
+        scale:       6371 / 24622,
+        fov:         20,
+        colorMap:    'neptune.jpg',
         dispMap:     null,
         dispScale:   0,
         normalMap:   null,
@@ -719,6 +767,37 @@
     moon.receiveShadow = true;
     scene.add(moon);
 
+    // ── Saturn rings ──────────────────────────────────────────────────────────
+    const saturnRingGroup = new THREE.Group();
+    saturnRingGroup.rotation.x = 0.05; // slight tilt toward viewer
+    saturnRingGroup.visible = false;
+    scene.add(saturnRingGroup);
+
+    (function() {
+      const innerR = 1.18, outerR = 2.22;
+      const geo = new THREE.RingGeometry(innerR, outerR, 256);
+
+      // Remap UV so u=0 at inner edge, u=1 at outer edge
+      const pos = geo.attributes.position;
+      const uv  = geo.attributes.uv;
+      const v3  = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        v3.fromBufferAttribute(pos, i);
+        uv.setXY(i, (v3.length() - innerR) / (outerR - innerR), 0.5);
+      }
+      uv.needsUpdate = true;
+
+      const tex = loader.load('8k_saturn_ring_alpha.png');
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex, side: THREE.DoubleSide,
+        transparent: true, depthWrite: false,
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = Math.PI / 2; // lie in XZ plane
+      saturnRingGroup.add(mesh);
+    })();
+
     // ── Lighting ──────────────────────────────────────────────────────────────
     const sun = new THREE.DirectionalLight(0xFFFFFF, 1.4);
     sun.position.set(100, 5, 30);
@@ -765,14 +844,21 @@
     document.getElementById('btnMars').addEventListener('click',    () => setBody('mars'));
     document.getElementById('btnMercury').addEventListener('click', () => setBody('mercury'));
     document.getElementById('btnVenus').addEventListener('click',   () => setBody('venus'));
+    document.getElementById('btnJupiter').addEventListener('click', () => setBody('jupiter'));
+    document.getElementById('btnSaturn').addEventListener('click',  () => setBody('saturn'));
+    document.getElementById('btnUranus').addEventListener('click',  () => setBody('uranus'));
+    document.getElementById('btnNeptune').addEventListener('click', () => setBody('neptune'));
 
     function setBody(b) {
       currentBody = b;
       EARTH_BODY_SCALE = BODIES[b].scale;
-      ['moon','mars','mercury','venus'].forEach(id =>
+      ['moon','mars','mercury','venus','jupiter','saturn','uranus','neptune'].forEach(id =>
         document.getElementById('btn' + id[0].toUpperCase() + id.slice(1))
           .classList.toggle('active', b === id)
       );
+      camera.fov = BODIES[b].fov;
+      camera.updateProjectionMatrix();
+      saturnRingGroup.visible = (b === 'saturn');
       applyBodyTextures(b);
       if (selectedCountries.length > 0) redrawAll();
     }
